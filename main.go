@@ -2,20 +2,38 @@ package main
 
 import (
 	"github.com/gregjones/httpcache"
+	"github.com/gregjones/httpcache/diskcache"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 )
 import "github.com/go-httpproxy/httpproxy"
 
 func main() {
 	prx, _ := httpproxy.NewProxyCert(CACert, CAKey)
-	prx.Rt = httpcache.NewMemoryCacheTransport()
+	prx.Rt = getTransport()
 	prx.OnError = OnError
 	prx.OnConnect = OnConnect
 	prx.OnResponse = OnResponse
 
 	http.ListenAndServe(":8080", prx)
+}
+
+func getTransport() *httpcache.Transport {
+	var cache httpcache.Cache
+
+	cache = httpcache.NewMemoryCache()
+
+	if home, err := os.UserHomeDir(); err == nil {
+		cacheDirPath := home + "/tmp/cache/"
+		if err = os.MkdirAll(cacheDirPath, os.ModePerm); err == nil {
+			cache = diskcache.New(cacheDirPath)
+			println("disk cache created: ", cacheDirPath)
+		}
+	}
+
+	return httpcache.NewTransport(cache)
 }
 
 func OnError(ctx *httpproxy.Context, where string,

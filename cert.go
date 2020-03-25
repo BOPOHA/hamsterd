@@ -1,9 +1,10 @@
 package main
+
 //openssl genrsa -out ca.key 4096
 //openssl req -new -x509 -key ca.key -out ca.crt
 
 var (
-CAKey = []byte(`-----BEGIN RSA PRIVATE KEY-----
+	CAKey = []byte(`-----BEGIN RSA PRIVATE KEY-----
 MIIJJwIBAAKCAgEAy77FZwHzaMm8YlLGmJIT8toAUNSCr3pNPZPYN6xJUCs88cWg
 RfuiekInzEpTKwQ9ptJSKyb3C/s2U70Mf9xRRd6ixVy5MSpWiSQrHNSqwZaA9bZO
 iVEGp8Ql7+Nto+cY8+AG18a80vfgXMbfRfVDTDJNt8VrsYfsFWG35UmmR2XClEm8
@@ -54,7 +55,7 @@ wQqPL8oavHemGZoRnqhUUv9PNPMZQv6wlgCgPvQhpxjGbSATt3q6y/s8lbCi4UkV
 Agb7A3ej5Z5RZyHn6JQaZr4S+jzaL+eqNztWWZVnx924eJM+5ewUFQmz1X4nAj7j
 kJ2dxxoYUOEhpidIiAyvICauKLpEs5kbe8C/1+4yuS2EcT3mwKnnMD3t2g==
 -----END RSA PRIVATE KEY-----`)
-CACert = []byte(`-----BEGIN CERTIFICATE-----
+	CACert = []byte(`-----BEGIN CERTIFICATE-----
 MIIFZTCCA02gAwIBAgIUO1z6/fPevLWuvoYkcnhxtKU+PNkwDQYJKoZIhvcNAQEL
 BQAwQjELMAkGA1UEBhMCWFgxFTATBgNVBAcMDERlZmF1bHQgQ2l0eTEcMBoGA1UE
 CgwTRGVmYXVsdCBDb21wYW55IEx0ZDAeFw0yMDAzMjUxODM5NTJaFw0yMDA0MjQx
