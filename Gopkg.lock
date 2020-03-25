@@ -10,12 +10,39 @@
   version = "v1.4"
 
 [[projects]]
-  branch = "master"
-  digest = "1:a2b4fa8b538f6e42d0f38cbdef92e771072d7a64a97ff1512da95554ab2680a1"
-  name = "github.com/gregjones/httpcache"
+  digest = "1:05f95ffdfcf651bdb0f05b40b69e7f5663047f8da75c72d58728acb59b5cc107"
+  name = "github.com/google/btree"
   packages = ["."]
   pruneopts = "NUT"
+  revision = "4030bb1f1f0c35b30ca7009e9ebd06849dd45306"
+  version = "v1.0.0"
+
+[[projects]]
+  branch = "master"
+  digest = "1:a86d65bc23eea505cd9139178e4d889733928fe165c7a008f41eaab039edf9df"
+  name = "github.com/gregjones/httpcache"
+  packages = [
+    ".",
+    "diskcache",
+  ]
+  pruneopts = "NUT"
   revision = "901d90724c7919163f472a9812253fb26761123d"
+
+[[projects]]
+  branch = "master"
+  digest = "1:89da0f0574bc94cfd0ac8b59af67bf76cdd110d503df2721006b9f0492394333"
+  name = "github.com/petar/GoLLRB"
+  packages = ["llrb"]
+  pruneopts = "NUT"
+  revision = "33fb24c13b99c46c93183c291836c573ac382536"
+
+[[projects]]
+  digest = "1:e1b94bd98c62fc2f905621fc6ba8209b7004e4513a1dfecb12a3de56ec2bb519"
+  name = "github.com/peterbourgon/diskv"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "0be1b92a6df0e4f5cb0a5d15fb7f643d0ad93ce6"
+  version = "v3.0.0"
 
 [solve-meta]
   analyzer-name = "dep"
@@ -23,6 +50,7 @@
   input-imports = [
     "github.com/go-httpproxy/httpproxy",
     "github.com/gregjones/httpcache",
+    "github.com/gregjones/httpcache/diskcache",
   ]
   solver-name = "gps-cdcl"
   solver-version = 1
