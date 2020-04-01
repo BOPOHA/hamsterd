@@ -1,6 +1,8 @@
 package main
 
 import (
+	"github.com/BOPOHA/internal-cache-proxy/internal/sscert"
+	"github.com/go-httpproxy/httpproxy"
 	"github.com/gregjones/httpcache"
 	"github.com/gregjones/httpcache/diskcache"
 	"log"
@@ -8,10 +10,9 @@ import (
 	"os"
 	"strconv"
 )
-import "github.com/go-httpproxy/httpproxy"
 
 func main() {
-	prx, _ := httpproxy.NewProxyCert(CACert, CAKey)
+	prx, _ := httpproxy.NewProxyCert(sscert.CACert, sscert.CAKey)
 	prx.Rt = getTransport()
 	prx.OnError = OnError
 	prx.OnConnect = OnConnect
