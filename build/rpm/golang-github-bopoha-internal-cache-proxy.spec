@@ -3,7 +3,7 @@
 
 # https://github.com/BOPOHA/internal-cache-proxy
 %global goipath         github.com/BOPOHA/internal-cache-proxy
-Version:                0.0.2
+Version:                v0.0.3
 
 %gometa
 
@@ -11,6 +11,8 @@ Version:                0.0.2
 Simple caching proxy for a fast rebuild containers.}
 
 %global golicenses      LICENSE
+%global godocs          README.md
+
 Name:           %{goname}
 Release:        1%{?dist}
 Summary:        Simple caching proxy for a fast rebuild containers
@@ -32,7 +34,9 @@ BuildRequires:  golang(github.com/gregjones/httpcache/diskcache)
 %goprep
 
 %build
-%gobuild -o %{gobuilddir}/bin/internal-cache-proxy %{goipath}
+for cmd in cmd/* ; do
+  %gobuild -o %{gobuilddir}/bin/$(basename $cmd) %{goipath}/$cmd
+done
 
 %install
 %gopkginstall
@@ -46,11 +50,12 @@ install -m 0755 -vp %{gobuilddir}/bin/* %{buildroot}%{_bindir}/
 
 %files
 %license LICENSE
+%doc README.md
 %{_bindir}/*
 
 %gopkgfiles
 
 %changelog
-* Wed Apr 01 19:51:24 CEST 2020 Anatolii Vorona <vorona.tolik@gmail.com> - 0.0.2-1
+* Wed Apr 01 22:57:18 CEST 2020 Anatolii Vorona <vorona.tolik@gmail.com> - v0.0.3-1
 - Initial package
 
