@@ -2,7 +2,7 @@
 %bcond_without check
 %global goipath         github.com/BOPOHA/hamsterd
 Version:                v0.0.4
-%gometa
+
 %global common_description %{expand:
 Simple caching proxy for a fast rebuild containers.}
 
@@ -19,6 +19,7 @@ Summary:        Simple caching proxy for a fast rebuild containers
 License:        MIT
 URL:            %{gourl}
 Source0:        %{gosource}
+BuildRequires:  golang-bin
 
 %description
 %{common_description}
@@ -46,5 +47,5 @@ install -m 0755 -vp %{gobuilddir}/bin/* %{buildroot}%{_bindir}/
 %{_bindir}/*
 
 %changelog
-* Wed Apr 01 22:57:18 CEST 2020 Anatolii Vorona <vorona.tolik@gmail.com> - v0.0.3-1
+* Wed Apr 01 2020 Anatolii Vorona <vorona.tolik@gmail.com> - v0.0.3-1
 - Initial package
