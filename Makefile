@@ -1,7 +1,7 @@
 .PHONY: vendor
 
 BIN		?= hamsterd
-PRJNAME ?= hamster
+PRJNAME ?= hamsterd
 
 GOBASE	?= $(shell pwd)
 GOBIN	?= $(GOBASE)/bin
