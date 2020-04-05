@@ -1,4 +1,4 @@
-module github.com/BOPOHA/internal-cache-proxy
+module github.com/BOPOHA/hamsterd
 
 go 1.13
 

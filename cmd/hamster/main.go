@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/BOPOHA/internal-cache-proxy/internal/sscert"
+	"github.com/BOPOHA/hamsterd/internal/sscert"
 	"github.com/go-httpproxy/httpproxy"
 	"github.com/gregjones/httpcache"
 	"github.com/gregjones/httpcache/diskcache"
