@@ -20,3 +20,6 @@ production:
 start: build
 	@./bin/$(BIN)
 
+lemming: vendor
+	@go build -o $(GOBIN)/lemmingd ./cmd/lemmingd/*.go
+	@$(GOBIN)/lemmingd
