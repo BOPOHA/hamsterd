@@ -23,3 +23,7 @@ start: build
 lemming: vendor
 	@go build -o $(GOBIN)/lemmingd ./cmd/lemmingd/*.go
 	@$(GOBIN)/lemmingd
+
+production_lemming:
+	CGO_ENABLED=0 GOOS=linux  GOARCH=amd64 go build -a -mod=vendor -o $(GOBIN)/lemmingd.linux  ./cmd/lemmingd/*.go
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -a -mod=vendor -o $(GOBIN)/lemmingd.darwin  ./cmd/lemmingd/*.go
