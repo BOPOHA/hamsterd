@@ -25,5 +25,7 @@ lemming: vendor
 	@$(GOBIN)/lemmingd
 
 production_lemming:
-	CGO_ENABLED=0 GOOS=linux  GOARCH=amd64 go build -a -mod=vendor -o $(GOBIN)/lemmingd.linux  ./cmd/lemmingd/*.go
-	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -a -mod=vendor -o $(GOBIN)/lemmingd.darwin  ./cmd/lemmingd/*.go
+	CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -a -mod=vendor -o $(GOBIN)/lemmingd.linux   ./cmd/lemmingd/*.go
+	CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build -a -mod=vendor -o $(GOBIN)/lemmingd.darwin  ./cmd/lemmingd/*.go
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -a -mod=vendor -o $(GOBIN)/lemmingd.64.exe  ./cmd/lemmingd/*.go
+	CGO_ENABLED=0 GOOS=windows GOARCH=386   go build -a -mod=vendor -o $(GOBIN)/lemmingd.32.exe  ./cmd/lemmingd/*.go
