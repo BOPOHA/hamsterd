@@ -52,7 +52,12 @@ func main() {
 	prx.OnError = OnError
 	prx.OnConnect = OnConnect
 	fmt.Println(string(sscert.CACert))
-	http.ListenAndServe(":18080", prx)
+	server := &http.Server{
+		Addr:           ":18080",
+		Handler:        prx,
+		MaxHeaderBytes: 1 << 23, // 8 MB
+	}
+	server.ListenAndServe()
 }
 
 func OnError(ctx *httpproxy.Context, where string,
