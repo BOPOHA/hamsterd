@@ -9,8 +9,10 @@ import (
 )
 
 type LemmingRule struct {
-	socket string
-	hosts  []string
+	socket                string
+	hosts                 []string
+	doProxyPathStartsWith []string
+	noProxyPathStartsWith []string
 }
 
 var redirects = []LemmingRule{
@@ -38,6 +40,24 @@ var redirects = []LemmingRule{
 			"static-qa16.happify.com",
 			"static.happify.localhost",
 			"static.happify.local",
+		},
+		doProxyPathStartsWith: []string{
+			"/static/",
+		},
+	},
+	{
+		socket: "127.0.0.1:8001",
+		hosts: []string{
+			"dev-connect.happify.com",
+			"stage-connect.happify.com",
+			"prod-connect.happify.com",
+		},
+		doProxyPathStartsWith: []string{
+			"/",
+		},
+		noProxyPathStartsWith: []string{
+			"/api/",
+			"/env.json",
 		},
 	},
 }
