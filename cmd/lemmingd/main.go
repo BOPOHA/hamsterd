@@ -57,7 +57,7 @@ var redirects = []LemmingRule{
 		},
 		noProxyPathStartsWith: []string{
 			"/api/",
-			"/env.json",
+			"/env.js",
 		},
 	},
 }
