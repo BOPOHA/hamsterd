@@ -37,6 +37,9 @@ var redirects = []LemmingRule{
 			"static-qa10.happify.com",
 			"static-qa11.happify.com",
 			"static-qa12.happify.com",
+			"static-qa13.happify.com",
+			"static-qa14.happify.com",
+			"static-qa15.happify.com",
 			"static-qa16.happify.com",
 			"static.happify.localhost",
 			"static.happify.local",
@@ -51,6 +54,8 @@ var redirects = []LemmingRule{
 			"dev-connect.happify.com",
 			"stage-connect.happify.com",
 			"prod-connect.happify.com",
+			"confidenavigator.com",
+			"stage.confidenavigator.com",
 		},
 		doProxyPathStartsWith: []string{
 			"/",
