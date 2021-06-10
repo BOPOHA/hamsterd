@@ -49,6 +49,20 @@ var redirects = []LemmingRule{
 		},
 	},
 	{
+		socket: "127.0.0.1:8000",
+		hosts: []string{
+			"ensemble-stage.happifyhealth.com",
+			"ensemble.happifyhealth.com",
+			"india.happify.com",
+		},
+		doProxyPathStartsWith: []string{
+			"/static/",
+		},
+		noProxyPathStartsWith: []string{
+			"/static/gen/",
+		},
+	},
+	{
 		socket: "127.0.0.1:8001",
 		hosts: []string{
 			"dev-connect.happify.com",
