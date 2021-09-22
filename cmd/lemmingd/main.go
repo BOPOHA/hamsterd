@@ -101,7 +101,7 @@ func main() {
 
 func OnError(ctx *httpproxy.Context, where string,
 	err *httpproxy.Error, opErr error) {
-	log.Printf("ERR: %s: %s [%s]", where, err, opErr)
+	log.Printf("ERR: %s: '%s' %s [%s]", where, ctx.ConnectHost, err, opErr)
 }
 
 func OnConnect(ctx *httpproxy.Context, host string) (
