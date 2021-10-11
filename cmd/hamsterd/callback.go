@@ -40,10 +40,10 @@ func OnAccept(ctx *httpproxy.Context, w http.ResponseWriter, r *http.Request) bo
 					"curl -s %s%s -o /etc/pki/ca-trust/source/anchors/proxy.dev.crt\n"+
 					"fi\n"+
 					"update-ca-trust\n"+
-					"grep -q ^proxy= /etc/dnf/dnf.conf || echo proxy=http://192.168.97.153:8080 >> /etc/dnf/dnf.conf"+
+					"grep -q ^proxy= /etc/dnf/dnf.conf || echo proxy=http://%s >> /etc/dnf/dnf.conf\n"+
 					"echo Done\n"+
 					"\n\n",
-				r.Host, localCaUrl)
+				r.Host, localCaUrl, r.Host)
 			return true
 		case localCaUrl:
 			w.Header().Add("Content-Type", "application/x-x509-ca-cert")
