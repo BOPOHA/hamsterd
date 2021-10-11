@@ -26,7 +26,7 @@ func OnResponse(ctx *httpproxy.Context, req *http.Request, resp *http.Response) 
 	if len(resp.Header.Get("X-From-Cache")) > 0 {
 		cached = "cached"
 	}
-	log.Printf("Responce: %s %s %v %s", req.Method, req.URL.String(), SessionID, cached)
+	log.Printf("Response: [%s] %s %s %v %s", req.RemoteAddr, req.Method, req.URL.String(), SessionID, cached)
 
 }
 
