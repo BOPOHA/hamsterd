@@ -38,9 +38,9 @@ func OnAccept(ctx *httpproxy.Context, w http.ResponseWriter, r *http.Request) bo
 				"#!/bin/bash +x\n"+
 					"if [ -d /etc/pki/ca-trust/source/anchors/ ]; then\n"+
 					"curl -s %s%s -o /etc/pki/ca-trust/source/anchors/proxy.dev.crt\n"+
-					"fi\n"+
 					"update-ca-trust\n"+
 					"grep -q ^proxy= /etc/dnf/dnf.conf || echo proxy=http://%s >> /etc/dnf/dnf.conf\n"+
+					"fi\n"+
 					"echo Done\n"+
 					"\n\n",
 				r.Host, localCaUrl, r.Host)
