@@ -1,12 +1,12 @@
 package main
 
 import (
-	"fmt"
 	"github.com/BOPOHA/hamsterd/internal/sscert"
 	"github.com/go-httpproxy/httpproxy"
 	"log"
 	"net/http"
 	"strconv"
+	"text/template"
 )
 
 func OnError(ctx *httpproxy.Context, where string,
@@ -26,24 +26,20 @@ func OnResponse(ctx *httpproxy.Context, req *http.Request, resp *http.Response) 
 	if len(resp.Header.Get("X-From-Cache")) > 0 {
 		cached = "cached"
 	}
-	log.Printf("Response: [%s] %s %s %v %s", req.RemoteAddr, req.Method, req.URL.String(), SessionID, cached)
+	log.Printf("Response: [%s] %s %s %v [%v]bytes %s", req.RemoteAddr, req.Method, req.URL.String(), SessionID, resp.ContentLength, cached)
 
 }
+
+var tplIndex = template.Must(template.New("j2Index").Parse(j2Index))
 
 func OnAccept(ctx *httpproxy.Context, w http.ResponseWriter, r *http.Request) bool {
 	if r.Method == "GET" && !r.URL.IsAbs() {
 		switch r.URL.Path {
 		case localRootUrl:
-			fmt.Fprintf(w,
-				"#!/bin/bash +x\n"+
-					"if [ -d /etc/pki/ca-trust/source/anchors/ ]; then\n"+
-					"curl -s %s%s -o /etc/pki/ca-trust/source/anchors/proxy.dev.crt\n"+
-					"update-ca-trust\n"+
-					"grep -q ^proxy= /etc/dnf/dnf.conf || echo proxy=http://%s >> /etc/dnf/dnf.conf\n"+
-					"fi\n"+
-					"echo Done\n"+
-					"\n\n",
-				r.Host, localCaUrl, r.Host)
+			tplIndex.Execute(w, paramsJ2Index{
+				ReqHost: r.Host,
+				CaURL:   localCaUrl,
+			})
 			return true
 		case localCaUrl:
 			w.Header().Add("Content-Type", "application/x-x509-ca-cert")
