@@ -115,7 +115,7 @@ func SignHosts(ca tls.Certificate, hosts []string) (*tls.Certificate, error) {
 		}
 	}
 	rnd := mrand.New(mrand.NewSource(serial.Int64()))
-	certPriv, err := rsa.GenerateKey(rnd, 1024)
+	certPriv, err := rsa.GenerateKey(rnd, 4096)
 	if err != nil {
 		return nil, err
 	}
