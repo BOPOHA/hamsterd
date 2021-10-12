@@ -1,3 +1,7 @@
+// source: github.com/gregjones/httpcache/httpcache.go
+// patched:
+// - func cacheKey
+// - var cacheable, excluded "range" header
 // Package httpcache provides a http.RoundTripper implementation that works as a
 // mostly RFC-compliant cache for http responses.
 //
@@ -40,11 +44,7 @@ type Cache interface {
 
 // cacheKey returns the cache key for req.
 func cacheKey(req *http.Request) string {
-	if req.Method == http.MethodGet {
-		return req.URL.String()
-	} else {
-		return req.Method + " " + req.URL.String()
-	}
+	return req.Method + " " + req.URL.String() + " " + req.Header.Get("range")
 }
 
 // CachedResponse returns the cached http.Response for req if present, and nil
@@ -138,7 +138,7 @@ func varyMatches(cachedResp *http.Response, req *http.Request) bool {
 // will be returned.
 func (t *Transport) RoundTrip(req *http.Request) (resp *http.Response, err error) {
 	cacheKey := cacheKey(req)
-	cacheable := (req.Method == "GET" || req.Method == "HEAD") && req.Header.Get("range") == ""
+	cacheable := req.Method == "GET" || req.Method == "HEAD"
 	var cachedResp *http.Response
 	if cacheable {
 		cachedResp, err = CachedResponse(t.Cache, req)
