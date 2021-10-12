@@ -27,7 +27,7 @@ if [ "${ID}" = "fedora" ]; then
 	  --setopt fedora-cisco-openh264.enabled=0 \
 	  --save
 	
-	dnf install -y \
+	rpm -q rpmfusion-free-release rpmfusion-nonfree-release || dnf install -y \
 	  https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-${VERSION_ID}.noarch.rpm \
 	  https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${VERSION_ID}.noarch.rpm
 	sed -i 's/^metalink=/#\0/; s/#baseurl=/baseurl=/' /etc/yum.repos.d/rpmfusion*repo
