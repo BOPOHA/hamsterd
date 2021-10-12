@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/gregjones/httpcache"
+	"github.com/BOPOHA/hamsterd/internal/httpcache"
 	"github.com/gregjones/httpcache/diskcache"
 	"os"
 )
