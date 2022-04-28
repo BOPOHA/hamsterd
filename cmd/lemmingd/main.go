@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/BOPOHA/hamsterd/internal/sscert"
-	"github.com/go-httpproxy/httpproxy"
+	"github.com/go-shortcut/httpproxy/v2"
 	"log"
 	"net/http"
 )
