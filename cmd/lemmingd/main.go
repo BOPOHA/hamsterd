@@ -1,8 +1,8 @@
 package main
 
 import (
+	"../internal/sscert"
 	"fmt"
-	"github.com/BOPOHA/hamsterd/internal/sscert"
 	"github.com/go-shortcut/httpproxy/v2"
 	"log"
 	"net/http"
