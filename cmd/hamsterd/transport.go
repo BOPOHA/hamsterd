@@ -1,15 +1,15 @@
 package main
 
 import (
-	"github.com/BOPOHA/hamsterd/internal/httpcache"
-	"github.com/gregjones/httpcache/diskcache"
+	"github.com/go-shortcut/httpcache/diskcache"
+	"github.com/go-shortcut/httpcache/httpcache"
+	"github.com/go-shortcut/httpcache/memorycache"
+	"net/http"
 	"os"
 )
 
 func getTransport() *httpcache.Transport {
 	var cache httpcache.Cache
-
-	cache = httpcache.NewMemoryCache()
 
 	if home, err := os.UserHomeDir(); err == nil {
 		cacheDirPath := home + "/tmp/cache/"
@@ -18,6 +18,19 @@ func getTransport() *httpcache.Transport {
 			println("disk cache created: ", cacheDirPath)
 		}
 	}
+	if cache == nil {
+		cache = memorycache.NewMemoryCache()
+		println("Memory cache created.")
+	}
 
-	return httpcache.NewTransport(cache)
+	return httpcache.NewTransportWithOpts(
+		cache,
+		func(req *http.Request) string {
+			return req.Method + " " + req.URL.String() + " " + req.Header.Get("range")
+		},
+		func(req *http.Request) bool {
+			return req.Method == "GET" || req.Method == "HEAD"
+		},
+	)
+
 }
