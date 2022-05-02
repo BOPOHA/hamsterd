@@ -1,7 +1,7 @@
 package main
 
 import (
-	"../internal/sscert"
+	"encoding/pem"
 	"github.com/go-shortcut/httpproxy/v2"
 	"log"
 	"net/http"
@@ -43,7 +43,9 @@ func OnAccept(ctx *httpproxy.Context, w http.ResponseWriter, r *http.Request) bo
 			return true
 		case localCaUrl:
 			w.Header().Add("Content-Type", "application/x-x509-ca-cert")
-			w.Write(sscert.CACert)
+			derBytes := ctx.Prx.Ca.Certificate[0]
+			c := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+			w.Write(c)
 			return true
 		}
 
