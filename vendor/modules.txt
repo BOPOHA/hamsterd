@@ -3,7 +3,7 @@
 github.com/go-shortcut/httpcache/diskcache
 github.com/go-shortcut/httpcache/httpcache
 github.com/go-shortcut/httpcache/memorycache
-# github.com/go-shortcut/httpproxy/v2 v2.0.0
+# github.com/go-shortcut/httpproxy/v2 v2.0.1
 ## explicit
 github.com/go-shortcut/httpproxy/v2
 # github.com/google/btree v1.0.1
