@@ -48,8 +48,8 @@ func (t *LemmingTransport) RoundTrip(req *http.Request) (resp *http.Response, er
 func (t *LemmingTransport) AddRules(rules []LemmingRule) {
 
 	for _, v := range rules {
-		for _, host := range v.hosts {
-			t.HostMap[host] = LemmingHostRule{v.socket, v.doProxyPathStartsWith, v.noProxyPathStartsWith}
+		for _, host := range v.Domains {
+			t.HostMap[host] = LemmingHostRule{v.LocalSocket, v.DoProxyPathStartsWith, v.NoProxyPathStartsWith}
 			t.HostMap[host+":443"] = t.HostMap[host]
 
 		}

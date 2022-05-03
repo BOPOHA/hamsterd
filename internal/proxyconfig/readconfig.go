@@ -2,16 +2,15 @@ package proxyconfig
 
 import (
 	"encoding/json"
-	"fmt"
 	"github.com/go-shortcut/httpproxy/v2"
 	"io/ioutil"
-	"log"
 	"os"
 )
 
 type ProxyUnitConfig struct {
-	Socket        string
-	FormatVersion string
+	Socket        string          `json:"Socket"`
+	FormatVersion string          `json:"FormatVersion"`
+	CustomConfig  json.RawMessage `json:"CustomConfig"`
 }
 type ProxyServiceConfig struct {
 	DefConfigFN string
@@ -35,7 +34,7 @@ func (c *ProxyServiceConfig) GetUnitConfig() ProxyUnitConfig {
 	return c.unitConfig
 }
 func (c *ProxyServiceConfig) Validate() error {
-	log.Printf("unitConfig: %+v\n", *c)
+	//log.Printf("unitConfig: %+v\n", *c)
 	return nil
 }
 
@@ -55,8 +54,6 @@ func (c *ProxyServiceConfig) InitConfigs() error {
 			c.unitConfig.Socket = DefaultHttpScoket
 		}
 
-		fmt.Println(result.FormatVersion)
-
 	} else {
 		// create and fill, if not exist
 		configFile, err := createFile(c.PathConfig)
@@ -64,7 +61,7 @@ func (c *ProxyServiceConfig) InitConfigs() error {
 			return err
 		}
 		defer configFile.Close()
-		configContent, err := EmbeddedFS.ReadFile(c.DefConfigFN)
+		configContent, err := EmbeddedFS.ReadFile("files/" + c.DefConfigFN)
 		if err != nil {
 			return err
 		}
@@ -104,6 +101,7 @@ func (c *ProxyServiceConfig) InitConfigs() error {
 			return err
 		}
 		c.caCert = httpproxy.DefaultCaCert
+
 	}
 	if caCertFile, err := os.Open(c.PathCaCert); err == nil {
 		// CA Cert

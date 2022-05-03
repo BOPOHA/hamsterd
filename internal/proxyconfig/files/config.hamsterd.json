@@ -1,5 +1,5 @@
 {
   "FormatVersion": "1.0",
-  "socket": ":8080",
-  "config": {}
+  "Socket": ":8080",
+  "CustomConfig": {}
 }
