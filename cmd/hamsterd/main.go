@@ -13,7 +13,7 @@ import (
 const configDir = ".hamsterd"
 
 var (
-	config proxyconfig.ProxyServiceConfig
+	config = proxyconfig.ProxyServiceConfig{DefConfigFN: "config.hamsterd.json"}
 )
 
 func init() {

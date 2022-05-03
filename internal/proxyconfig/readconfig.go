@@ -14,6 +14,8 @@ type ProxyUnitConfig struct {
 	FormatVersion string
 }
 type ProxyServiceConfig struct {
+	DefConfigFN string
+
 	PathConfig string
 	PathCaCert string
 	PathCaKey  string
@@ -62,7 +64,11 @@ func (c *ProxyServiceConfig) InitConfigs() error {
 			return err
 		}
 		defer configFile.Close()
-		_, err = configFile.Write(DefaultConfigContent)
+		configContent, err := EmbeddedFS.ReadFile(c.DefConfigFN)
+		if err != nil {
+			return err
+		}
+		_, err = configFile.Write(configContent)
 		if err != nil {
 			return err
 		}
