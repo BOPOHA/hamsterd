@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"github.com/BOPOHA/hamsterd/internal/proxyconfig"
 	"github.com/go-shortcut/httpproxy/v2"
@@ -30,77 +31,13 @@ func init() {
 }
 
 type LemmingRule struct {
-	socket                string
-	hosts                 []string
-	doProxyPathStartsWith []string
-	noProxyPathStartsWith []string
+	LocalSocket           string   `json:"LocalSocket"`
+	Domains               []string `json:"Domains"`
+	DoProxyPathStartsWith []string `json:"StartWithWL"`
+	NoProxyPathStartsWith []string `json:"StartWithBL"`
 }
 
-var redirects = []LemmingRule{
-	{
-		socket: "127.0.0.1:8000",
-		hosts: []string{
-			"static.happify.com",
-			"static.as.happify.com",
-			"static.eu.happify.com",
-			"static.b2b.happify.com",
-			"static.stage.b2b.happify.com",
-			"static-stage.happify.com",
-			"static-qa01.happify.com",
-			"static-qa02.happify.com",
-			"static-qa03.happify.com",
-			"static-qa04.happify.com",
-			"static-qa05.happify.com",
-			"static-qa06.happify.com",
-			"static-qa07.happify.com",
-			"static-qa08.happify.com",
-			"static-qa09.happify.com",
-			"static-qa10.happify.com",
-			"static-qa11.happify.com",
-			"static-qa12.happify.com",
-			"static-qa13.happify.com",
-			"static-qa14.happify.com",
-			"static-qa15.happify.com",
-			"static-qa16.happify.com",
-			"static.happify.localhost",
-			"static.happify.local",
-		},
-		doProxyPathStartsWith: []string{
-			"/static/",
-		},
-	},
-	{
-		socket: "127.0.0.1:8000",
-		hosts: []string{
-			"ensemble-stage.happifyhealth.com",
-			"ensemble.happifyhealth.com",
-			"india.happify.com",
-		},
-		doProxyPathStartsWith: []string{
-			"/static/",
-		},
-		noProxyPathStartsWith: []string{
-			"/static/gen/",
-		},
-	},
-	{
-		socket: "127.0.0.1:8001",
-		hosts: []string{
-			"dev-connect.happify.com",
-			"stage-connect.happify.com",
-			"prod-connect.happify.com",
-			"confidenavigator.com",
-			"stage.confidenavigator.com",
-		},
-		doProxyPathStartsWith: []string{
-			"/",
-		},
-		noProxyPathStartsWith: []string{
-			"/api/",
-			"/env.js",
-		},
-	},
-}
+var redirects []LemmingRule
 
 func main() {
 
@@ -111,6 +48,13 @@ func main() {
 	if err := config.InitConfigs(); err != nil {
 		log.Fatalf("config init failed: %s", err.Error())
 	}
+	// reading custom config
+	err := json.Unmarshal(config.GetUnitConfig().CustomConfig, &redirects)
+	if err != nil {
+		log.Fatalln("Failed to unmarshal CustomConfig")
+	}
+	//log.Println(redirects)
+
 	prx, err := httpproxy.NewProxyCert(config.GetCaCert(), config.GetCaKey())
 	if err != nil {
 		log.Fatalln(err)
