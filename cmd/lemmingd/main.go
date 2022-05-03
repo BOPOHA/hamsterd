@@ -13,7 +13,7 @@ import (
 const configDir = ".lemmingd"
 
 var (
-	config proxyconfig.ProxyServiceConfig
+	config = proxyconfig.ProxyServiceConfig{DefConfigFN: "config.lemmingd.json"}
 )
 
 func init() {

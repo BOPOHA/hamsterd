@@ -1,9 +1,9 @@
 package proxyconfig
 
-import _ "embed"
+import "embed"
 
-// DefaultConfigContent provides default json unitConfig file.
-//go:embed files/config.json
-var DefaultConfigContent []byte
+// EmbeddedFS provides FS with default config files.
+//go:embed files/*.json
+var EmbeddedFS embed.FS
 
 var DefaultHttpScoket = ":8081"
