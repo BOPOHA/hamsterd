@@ -30,7 +30,11 @@ func OnResponse(ctx *httpproxy.Context, req *http.Request, resp *http.Response) 
 
 }
 
-var tplIndex = template.Must(template.New("j2Index").Parse(j2Index))
+var (
+	tplIndex     = template.Must(template.New("j2Index").Parse(j2Index))
+	localRootUrl = "/"
+	localCaUrl   = "/ca.crt"
+)
 
 func OnAccept(ctx *httpproxy.Context, w http.ResponseWriter, r *http.Request) bool {
 	if r.Method == "GET" && !r.URL.IsAbs() {
