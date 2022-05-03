@@ -1,14 +1,43 @@
 package main
 
 import (
-	"../internal/sscert"
+	"flag"
+	"github.com/BOPOHA/hamsterd/internal/proxyconfig"
 	"github.com/go-shortcut/httpproxy/v2"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 )
 
+const configDir = ".hamsterd"
+
+var (
+	config proxyconfig.ProxyServiceConfig
+)
+
+func init() {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defaultConfigJson := filepath.Join(homeDir, configDir, "config.json")
+	defaultCaCrt := filepath.Join(homeDir, configDir, "ca.crt")
+	defaultCaKey := filepath.Join(homeDir, configDir, "ca.key")
+	flag.StringVar(&config.PathConfig, "config", defaultConfigJson, "config path. default "+defaultConfigJson)
+	flag.StringVar(&config.PathCaCert, "cacert", defaultCaCrt, "CA crt path. default "+defaultCaCrt)
+	flag.StringVar(&config.PathCaKey, "cakey", defaultCaKey, "CA key path. default "+defaultCaKey)
+}
+
 func main() {
-	prx, err := httpproxy.NewProxyCert(sscert.CACert, sscert.CAKey)
+	flag.Parse()
+	if err := config.Validate(); err != nil {
+		log.Fatalf("config validation failed: %s", err.Error())
+	}
+	if err := config.InitConfigs(); err != nil {
+		log.Fatalf("config init failed: %s", err.Error())
+	}
+	prx, err := httpproxy.NewProxyCert(config.GetCaCert(), config.GetCaKey())
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -19,7 +48,7 @@ func main() {
 	prx.OnAccept = OnAccept
 
 	server := &http.Server{
-		Addr:           ":8080",
+		Addr:           config.GetUnitConfig().Socket,
 		Handler:        prx,
 		MaxHeaderBytes: 1 << 23, // 8 MB
 	}
