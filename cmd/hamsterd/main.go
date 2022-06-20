@@ -41,6 +41,7 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
+	prx.MitmChunked = false
 	prx.Rt = getTransport()
 	prx.OnError = OnError
 	prx.OnConnect = OnConnect
