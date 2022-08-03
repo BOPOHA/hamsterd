@@ -1,9 +1,9 @@
 package main
 
 import (
-	"github.com/go-shortcut/httpcache/diskcache"
 	"github.com/go-shortcut/httpcache/httpcache"
-	"github.com/go-shortcut/httpcache/memorycache"
+	"github.com/go-shortcut/httpcache/pkg/diskcache"
+	"github.com/go-shortcut/httpcache/pkg/memorycache"
 	"net/http"
 	"os"
 )
