@@ -1,9 +1,14 @@
-# github.com/go-httpproxy/httpproxy v0.0.0-20180302135735-981f79e1f29c
-github.com/go-httpproxy/httpproxy
-# github.com/google/btree v1.0.0
+# github.com/go-shortcut/httpcache v0.0.0-20220803211201-bfb5cd5333a4
+## explicit; go 1.18
+github.com/go-shortcut/httpcache/httpcache
+github.com/go-shortcut/httpcache/pkg/diskcache
+github.com/go-shortcut/httpcache/pkg/memorycache
+# github.com/go-shortcut/httpproxy/v2 v2.0.1
+## explicit; go 1.16
+github.com/go-shortcut/httpproxy/v2
+# github.com/google/btree v1.1.2
+## explicit; go 1.18
 github.com/google/btree
-# github.com/gregjones/httpcache v0.0.0-20190611155906-901d90724c79
-github.com/gregjones/httpcache
-github.com/gregjones/httpcache/diskcache
 # github.com/peterbourgon/diskv v2.0.1+incompatible
+## explicit
 github.com/peterbourgon/diskv

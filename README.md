@@ -8,4 +8,3 @@ mock -r epel-8-x86_64 \
     --scm-option branch=dev \
     --scm-option write_tar=True \
     --scm-option git_get='git clone https://github.com/BOPOHA/hamsterd.git'
-

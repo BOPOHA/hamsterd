@@ -1,0 +1,70 @@
+{
+  "FormatVersion": "1.0",
+  "Socket": ":18080",
+  "CustomConfig": [
+    {
+      "LocalSocket": "127.0.0.1:8000",
+      "Domains": [
+        "static.example.com",
+        "static.as.example.com",
+        "static.eu.example.com",
+        "static.b2b.example.com",
+        "static.stage.b2b.example.com",
+        "static-stage.example.com",
+        "static-qa01.example.com",
+        "static-qa02.example.com",
+        "static-qa03.example.com",
+        "static-qa04.example.com",
+        "static-qa05.example.com",
+        "static-qa06.example.com",
+        "static-qa07.example.com",
+        "static-qa08.example.com",
+        "static-qa09.example.com",
+        "static-qa10.example.com",
+        "static-qa11.example.com",
+        "static-qa12.example.com",
+        "static-qa13.example.com",
+        "static-qa14.example.com",
+        "static-qa15.example.com",
+        "static-qa16.example.com",
+        "static.example.localhost",
+        "static.example.local"
+      ],
+      "StartWithWL": [
+        "/static/"
+      ],
+      "StartWithBL": null
+    },
+    {
+      "LocalSocket": "127.0.0.1:8000",
+      "Domains": [
+        "ensemble-stage.examplehealth.com",
+        "ensemble.examplehealth.com",
+        "india.example.com"
+      ],
+      "StartWithWL": [
+        "/static/"
+      ],
+      "StartWithBL": [
+        "/static/gen/"
+      ]
+    },
+    {
+      "LocalSocket": "127.0.0.1:8001",
+      "Domains": [
+        "dev-connect.example.com",
+        "stage-connect.example.com",
+        "prod-connect.example.com",
+        "confideexample.com",
+        "stage.confideexample.com"
+      ],
+      "StartWithWL": [
+        "/"
+      ],
+      "StartWithBL": [
+        "/api/",
+        "/env.js"
+      ]
+    }
+  ]
+}

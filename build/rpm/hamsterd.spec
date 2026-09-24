@@ -27,7 +27,6 @@ BuildRequires:  golang-bin
 %prep
 %setup -T -cn %{pathprefix}/%{goipath}
 tar -xvof %{SOURCE0} --strip 1
-ls -lah
 
 %build
 make production
