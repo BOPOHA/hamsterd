@@ -84,7 +84,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 		return rewritten, nil
 	})
-	proxy.NonproxyHandler = informationHandler()
+	proxy.NonproxyHandler = informationHandler(ca.PEM)
 
 	if configCreated {
 		logger.Printf("created configuration %s", *configPath)
@@ -102,11 +102,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func informationHandler() http.Handler {
+func informationHandler(caPEM []byte) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		_, _ = io.WriteString(writer, "lemmingd selective local-development proxy\nHealth check: /healthz\n")
+		_, _ = io.WriteString(writer, "lemmingd selective local-development proxy\nCA certificate: /ca.crt\nHealth check: /healthz\n")
+	})
+	mux.HandleFunc("GET /ca.crt", func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/x-x509-ca-cert")
+		writer.Header().Set("Content-Disposition", `attachment; filename="lemmingd-ca.crt"`)
+		_, _ = writer.Write(caPEM)
 	})
 	mux.HandleFunc("GET /healthz", func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
