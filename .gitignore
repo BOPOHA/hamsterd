@@ -16,5 +16,6 @@
 /vendor/
 .idea
 /bin/
+/dist/
 /rpmbuild/
 /rpm-results/
