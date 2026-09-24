@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "listen": "127.0.0.1:18080",
+  "rules": [
+    {
+      "target": "127.0.0.1:8000",
+      "domains": [
+        "static.example.com"
+      ],
+      "include_paths": [
+        "/static/"
+      ],
+      "exclude_paths": [
+        "/static/generated/"
+      ]
+    }
+  ]
+}

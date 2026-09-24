@@ -1,0 +1,48 @@
+.TH LEMMINGD 1 "September 2026" "lemmingd 0.1.0" "User Commands"
+.SH NAME
+lemmingd \- selective local-development HTTP and HTTPS proxy
+.SH SYNOPSIS
+.B lemmingd
+.RI [ options ]
+.SH DESCRIPTION
+.B lemmingd
+routes configured domain and path combinations to local HTTP servers. It
+intercepts HTTPS only for configured domains; all other CONNECT traffic is
+tunneled unchanged. Exclusion prefixes take precedence over inclusion prefixes.
+.PP
+A unique local certificate authority is generated on first start. The CA is
+not trusted or installed automatically.
+.SH OPTIONS
+.TP
+.BI \-config " path"
+Use the specified JSON configuration file.
+.TP
+.BI \-cacert " path"
+Use the specified CA certificate file.
+.TP
+.BI \-cakey " path"
+Use the specified CA private-key file.
+.TP
+.BI \-listen " host:port"
+Override the configured listening address.
+.TP
+.B \-version
+Print version information and exit.
+.SH FILES
+.TP
+.I $XDG_CONFIG_HOME/lemmingd/config.json
+Configuration and redirect rules. Defaults below
+.IR ~/.config .
+.TP
+.I $XDG_CONFIG_HOME/lemmingd/ca.crt
+Generated public CA certificate.
+.TP
+.I $XDG_CONFIG_HOME/lemmingd/ca.key
+Generated private CA key. Do not share this file.
+.SH SECURITY
+The default listener is 127.0.0.1:18080. Remote clients and non-loopback
+redirect targets each require an explicit opt-in. Apply separate network access
+controls before enabling either option.
+.SH SEE ALSO
+.BR hamsterd (1),
+the project README, and SECURITY.md.

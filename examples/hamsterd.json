@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "listen": "127.0.0.1:8080",
+  "cache": {
+    "directory": "",
+    "max_size_mib": 1024,
+    "max_object_mib": 256,
+    "default_ttl": "1h"
+  }
+}

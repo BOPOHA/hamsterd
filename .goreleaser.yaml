@@ -1,0 +1,63 @@
+version: 2
+
+project_name: hamsterd
+
+builds:
+  - id: hamsterd
+    main: ./cmd/hamsterd
+    binary: hamsterd
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - >-
+        -s -w
+        -X github.com/BOPOHA/hamsterd/internal/buildinfo.Version={{.Version}}+{{.ShortCommit}}
+
+  - id: lemmingd
+    main: ./cmd/lemmingd
+    binary: lemmingd
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - >-
+        -s -w
+        -X github.com/BOPOHA/hamsterd/internal/buildinfo.Version={{.Version}}+{{.ShortCommit}}
+
+archives:
+  - id: hamsterd
+    ids: [hamsterd]
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "hamsterd_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: [LICENSE, README.md, SECURITY.md]
+
+  - id: lemmingd
+    ids: [lemmingd]
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "lemmingd_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: [LICENSE, README.md, SECURITY.md]
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+release:
+  draft: false
+  prerelease: auto

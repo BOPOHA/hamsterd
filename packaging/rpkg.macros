@@ -1,0 +1,31 @@
+#!/bin/bash
+# Custom rpkg macros for hamsterd. Referenced by rpkg.conf.
+
+# Generate a dependency archive while building the source RPM. The checkout is
+# vendor-free before and after this function runs; mock consumes Source1 without
+# requiring network access.
+function go_vendor_pack {
+    local tarball_name="hamsterd-go-vendor.tar.gz"
+    local module_cache="${TMPDIR:-/tmp}/hamsterd-rpkg-gomodcache"
+    local vendor_path="$PWD/vendor"
+
+    echo "go_vendor_pack: resolving modules in $PWD" >&2
+    rm -rf -- "$vendor_path"
+    mkdir -p "$module_cache"
+    if ! GOMODCACHE="$module_cache" go mod download >&2; then
+        rm -rf -- "$vendor_path"
+        return 1
+    fi
+    if ! GOMODCACHE="$module_cache" go mod vendor >&2; then
+        rm -rf -- "$vendor_path"
+        return 1
+    fi
+    if ! tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 \
+        --numeric-owner -cf - vendor/ | gzip -n >"${OUTDIR}/${tarball_name}"; then
+        rm -rf -- "$vendor_path"
+        return 1
+    fi
+    rm -rf -- "$vendor_path"
+    echo "go_vendor_pack: wrote ${OUTDIR}/${tarball_name}" >&2
+    echo "$tarball_name"
+}
