@@ -11,9 +11,7 @@ SPEC := packaging/hamsterd.spec
 FEDORA_VERSION ?= $(shell rpm -E %fedora)
 MOCK_CONFIG ?= fedora-$(FEDORA_VERSION)-$(shell uname -m)
 LDFLAGS := -s -w \
-	-X github.com/BOPOHA/hamsterd/internal/buildinfo.Version=$(VERSION) \
-	-X github.com/BOPOHA/hamsterd/internal/buildinfo.Commit=$(shell git rev-parse --short HEAD 2>/dev/null || echo unknown) \
-	-X github.com/BOPOHA/hamsterd/internal/buildinfo.Date=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+	-X github.com/BOPOHA/hamsterd/internal/buildinfo.Version=$(VERSION)
 
 define build_bin_bundle
 	@mkdir -p $(GOBIN)
@@ -31,7 +29,19 @@ deps:
 	go mod download
 
 clean:
-	rm -rf $(GOBIN)
+	@for path in \
+		"$(GOBIN)" \
+		"$(GOBASE)/dist" \
+		"$(RPM_OUTDIR)" \
+		"$(GOBASE)/rpm-results" \
+		"$(GOBASE)/vendor"; do \
+		case "$$path" in \
+			"$(GOBASE)"/*) rm -rf -- "$$path" ;; \
+			*) echo "refusing to clean path outside $(GOBASE): $$path" >&2; exit 1 ;; \
+		esac; \
+	done
+	@find "$(GOBASE)" -maxdepth 1 -type f \
+		\( -name '*.test' -o -name '*.out' \) -delete
 
 $(ALL_BINARY):
 	$(call build_bin_bundle,$@)

@@ -14,9 +14,7 @@ builds:
     ldflags:
       - >-
         -s -w
-        -X github.com/BOPOHA/hamsterd/internal/buildinfo.Version={{.Version}}
-        -X github.com/BOPOHA/hamsterd/internal/buildinfo.Commit={{.FullCommit}}
-        -X github.com/BOPOHA/hamsterd/internal/buildinfo.Date={{.Date}}
+        -X github.com/BOPOHA/hamsterd/internal/buildinfo.Version={{.Version}}+{{.ShortCommit}}
 
   - id: lemmingd
     main: ./cmd/lemmingd
@@ -29,9 +27,7 @@ builds:
     ldflags:
       - >-
         -s -w
-        -X github.com/BOPOHA/hamsterd/internal/buildinfo.Version={{.Version}}
-        -X github.com/BOPOHA/hamsterd/internal/buildinfo.Commit={{.FullCommit}}
-        -X github.com/BOPOHA/hamsterd/internal/buildinfo.Date={{.Date}}
+        -X github.com/BOPOHA/hamsterd/internal/buildinfo.Version={{.Version}}+{{.ShortCommit}}
 
 archives:
   - id: hamsterd

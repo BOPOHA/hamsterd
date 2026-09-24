@@ -30,6 +30,12 @@ make build
 binaries in `bin/`. Dependencies are standard Go modules; `vendor/` is neither
 required nor stored in Git.
 
+Version output identifies the kind of build without empty metadata fields:
+
+- local `make build`: `hamsterd <git-describe>`;
+- RPM: `hamsterd <semver>`;
+- GitHub release: `hamsterd <semver>+<short-git-hash>`.
+
 ## hamsterd
 
 Start the caching proxy:
@@ -178,6 +184,9 @@ make fc
 
 One source spec produces independently installable `hamsterd` and `lemmingd`
 RPM packages. Build artifacts are written below `rpmbuild/` and `rpm-results/`.
+
+`make clean` removes `bin/`, `dist/`, `rpmbuild/`, `rpm-results/`, a temporary
+`vendor/` tree, and root-level Go test and coverage artifacts.
 
 To create the COPR package, select the SCM source type and use:
 

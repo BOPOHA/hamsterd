@@ -40,7 +40,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if *showVersion {
-		fmt.Fprintf(stdout, "lemmingd %s (commit %s, built %s)\n", buildinfo.Version, buildinfo.Commit, buildinfo.Date)
+		fmt.Fprintf(stdout, "lemmingd %s\n", buildinfo.Version)
 		return 0
 	}
 
