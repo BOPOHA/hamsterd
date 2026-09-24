@@ -1,21 +1,30 @@
-.PHONY: all build clean deps hamsterd lemmingd run test vet
+.PHONY: all build builddep clean deps fc hamsterd lemmingd rpm run srpm test vet
 
 ALL_BINARY = hamsterd lemmingd
 PRJNAME ?= hamsterd
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
 GOBASE	?= $(shell pwd)
 GOBIN	?= $(GOBASE)/bin
+RPM_OUTDIR ?= $(GOBASE)/rpmbuild
+SPEC := packaging/hamsterd.spec
+FEDORA_VERSION ?= $(shell rpm -E %fedora)
+MOCK_CONFIG ?= fedora-$(FEDORA_VERSION)-$(shell uname -m)
+LDFLAGS := -s -w \
+	-X github.com/BOPOHA/hamsterd/internal/buildinfo.Version=$(VERSION) \
+	-X github.com/BOPOHA/hamsterd/internal/buildinfo.Commit=$(shell git rev-parse --short HEAD 2>/dev/null || echo unknown) \
+	-X github.com/BOPOHA/hamsterd/internal/buildinfo.Date=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
 define build_bin_bundle
 	@mkdir -p $(GOBIN)
-	CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o $(GOBIN)/$1.linux-amd64 ./cmd/$1
-	CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o $(GOBIN)/$1.darwin-amd64 ./cmd/$1
-	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o $(GOBIN)/$1.windows-amd64.exe ./cmd/$1
+	CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags="$(LDFLAGS)" -o $(GOBIN)/$1.linux-amd64 ./cmd/$1
+	CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build -trimpath -ldflags="$(LDFLAGS)" -o $(GOBIN)/$1.darwin-amd64 ./cmd/$1
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="$(LDFLAGS)" -o $(GOBIN)/$1.windows-amd64.exe ./cmd/$1
 endef
 
 define build_bin_current
 	@mkdir -p $(GOBIN)
-	CGO_ENABLED=0 go build -trimpath -o $(GOBIN)/$1 ./cmd/$1
+	CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o $(GOBIN)/$1 ./cmd/$1
 endef
 
 deps:
@@ -38,6 +47,28 @@ test:
 
 vet:
 	CGO_ENABLED=0 go vet ./...
+
+srpm:
+	mkdir -p $(RPM_OUTDIR)/SRPMS
+	rm -f $(RPM_OUTDIR)/SRPMS/*.src.rpm
+	rpkg srpm --spec $(SPEC) --outdir $(RPM_OUTDIR)/SRPMS
+	@find $(RPM_OUTDIR)/SRPMS -name '*.src.rpm' -print
+
+rpm: srpm
+	@srpm="$$(find $(RPM_OUTDIR)/SRPMS -name '*.src.rpm' -print -quit)"; \
+		test -n "$$srpm"; \
+		rpmbuild --rebuild "$$srpm" --define "_topdir $(RPM_OUTDIR)"
+	@find $(RPM_OUTDIR)/RPMS -name '*.rpm' -print
+
+builddep: srpm
+	@srpm="$$(find $(RPM_OUTDIR)/SRPMS -name '*.src.rpm' -print -quit)"; \
+		test -n "$$srpm"; \
+		dnf builddep --assumeno "$$srpm"
+
+fc: srpm
+	@srpm="$$(find $(RPM_OUTDIR)/SRPMS -name '*.src.rpm' -print -quit)"; \
+		test -n "$$srpm"; \
+		mock --no-clean -r $(MOCK_CONFIG) --resultdir=$(GOBASE)/rpm-results "$$srpm"
 
 run:
 	$(call build_bin_current,$(name))

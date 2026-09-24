@@ -1,0 +1,52 @@
+.TH HAMSTERD 1 "September 2026" "hamsterd 0.1.0" "User Commands"
+.SH NAME
+hamsterd \- local caching HTTP and HTTPS development proxy
+.SH SYNOPSIS
+.B hamsterd
+.RI [ options ]
+.SH DESCRIPTION
+.B hamsterd
+is a forward proxy that caches eligible public downloads. It intercepts HTTPS
+using a unique local certificate authority generated on first start. The CA is
+not trusted or installed automatically.
+.PP
+Only complete GET responses with status 200 are cached. Requests containing
+credentials, cookies, ranges, or cache-bypass directives are not cached.
+.SH OPTIONS
+.TP
+.BI \-config " path"
+Use the specified JSON configuration file.
+.TP
+.BI \-cacert " path"
+Use the specified CA certificate file.
+.TP
+.BI \-cakey " path"
+Use the specified CA private-key file.
+.TP
+.BI \-listen " host:port"
+Override the configured listening address.
+.TP
+.B \-version
+Print version information and exit.
+.SH FILES
+.TP
+.I $XDG_CONFIG_HOME/hamsterd/config.json
+Configuration file. Defaults below
+.IR ~/.config .
+.TP
+.I $XDG_CONFIG_HOME/hamsterd/ca.crt
+Generated public CA certificate.
+.TP
+.I $XDG_CONFIG_HOME/hamsterd/ca.key
+Generated private CA key. Do not share this file.
+.TP
+.I $XDG_CACHE_HOME/hamsterd/
+Cached response objects. Defaults below
+.IR ~/.cache .
+.SH SECURITY
+The default listener is 127.0.0.1:8080. Remote listening must be explicitly
+enabled and requires separate network access controls. Trust the generated CA
+only in clients intentionally configured to use this proxy.
+.SH SEE ALSO
+.BR lemmingd (1),
+the project README, and SECURITY.md.

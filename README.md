@@ -179,6 +179,25 @@ make fc
 One source spec produces independently installable `hamsterd` and `lemmingd`
 RPM packages. Build artifacts are written below `rpmbuild/` and `rpm-results/`.
 
+To create the COPR package, select the SCM source type and use:
+
+| COPR field | Value |
+| --- | --- |
+| Clone URL | `https://github.com/BOPOHA/hamsterd.git` |
+| Committish | `main` (or a release tag) |
+| Subdirectory | leave empty |
+| Spec file | `packaging/hamsterd.spec` |
+| Build SRPM with | `rpkg` |
+
+Enable the desired Fedora chroots and trigger a build. The SCM source builder
+uses the repository's `rpkg.conf` and `packaging/rpkg.macros` to download Go
+modules and attach `hamsterd-go-vendor.tar.gz` to the SRPM. The architecture
+builders then compile and test with `-mod=vendor`, without network access.
+
+After the first successful build, enable COPR auto-rebuild and add the webhook
+shown under the project's **Settings > Integrations** page to the GitHub
+repository if builds should follow pushes automatically.
+
 ## License
 
 The project is MIT licensed. Statically linked dependencies retain their
