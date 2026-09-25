@@ -64,17 +64,27 @@ for package in hamsterd lemmingd; do
     # x/net and x/text carry the same Go project BSD-3-Clause text.
     install -Dm644 vendor/golang.org/x/net/LICENSE \
         %{buildroot}%{_licensedir}/${package}/LICENSE-go-x-net-and-x-text
+
+    # Keep the repository layout so relative links in README.md also work in
+    # installed package documentation.
+    install -Dm644 README.md %{buildroot}%{_docdir}/${package}/README.md
+    install -Dm644 SECURITY.md %{buildroot}%{_docdir}/${package}/SECURITY.md
+    install -Dm644 CHANGELOG.md %{buildroot}%{_docdir}/${package}/CHANGELOG.md
+    install -d %{buildroot}%{_docdir}/${package}/docs
+    install -m644 docs/*.md %{buildroot}%{_docdir}/${package}/docs/
+    install -d %{buildroot}%{_docdir}/${package}/examples
+    install -m644 examples/*.json %{buildroot}%{_docdir}/${package}/examples/
 done
 
 %files
 %license %{_licensedir}/hamsterd/
-%doc README.md SECURITY.md CHANGELOG.md examples/hamsterd.json
+%doc %{_docdir}/hamsterd/
 %{_bindir}/hamsterd
 %{_mandir}/man1/hamsterd.1*
 
 %files -n lemmingd
 %license %{_licensedir}/lemmingd/
-%doc README.md SECURITY.md CHANGELOG.md examples/lemmingd.json
+%doc %{_docdir}/lemmingd/
 %{_bindir}/lemmingd
 %{_mandir}/man1/lemmingd.1*
 

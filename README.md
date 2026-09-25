@@ -12,6 +12,15 @@ but they have different jobs:
 Both commands listen on loopback by default. They generate a unique local CA on
 first start and never install it into a trust store automatically.
 
+## User guides
+
+- [Use lemmingd](docs/lemmingd.md) to combine a local frontend or backend with
+  selected routes from a real QA, staging, or production-like site.
+- [Use hamsterd](docs/hamsterd.md) to cache eligible public development
+  downloads.
+- [Install the local CA](docs/ca-installation.md) in Firefox,
+  Chrome/Chromium-family browsers, Safari, Linux, macOS, or Windows.
+
 ## Requirements
 
 - Go 1.25 or newer
@@ -62,84 +71,31 @@ Version output identifies the kind of build without empty metadata fields:
 
 ## hamsterd
 
-Start the caching proxy:
+`hamsterd` caches eligible public downloads for repeated builds and development
+work. Start it with:
 
 ```sh
 ./bin/hamsterd
 ```
 
-On first start it creates:
-
-```text
-${XDG_CONFIG_HOME:-$HOME/.config}/hamsterd/config.json
-${XDG_CONFIG_HOME:-$HOME/.config}/hamsterd/ca.crt
-${XDG_CONFIG_HOME:-$HOME/.config}/hamsterd/ca.key
-${XDG_CACHE_HOME:-$HOME/.cache}/hamsterd/
-```
-
-Test the health endpoint and download the public CA certificate:
-
-```sh
-curl http://127.0.0.1:8080/healthz
-curl -o hamsterd-ca.crt http://127.0.0.1:8080/ca.crt
-```
-
-Test an HTTPS request without changing the system trust store:
-
-```sh
-curl --proxy http://127.0.0.1:8080 \
-  --cacert "${XDG_CONFIG_HOME:-$HOME/.config}/hamsterd/ca.crt" \
-  -D - https://example.com/ -o /dev/null
-```
-
-Repeat the request and inspect `X-Hamsterd-Cache`: the first eligible response
-is `MISS`, and the next is `HIT`.
-
-### Cache policy
-
-The cache deliberately favors safety over maximum hit rate. It stores only
-complete `GET` responses with status 200. It bypasses requests containing
-authorization, cookies, ranges, `no-cache`, or `no-store`, and responses with
-`Set-Cookie`, `Vary`, `Content-Range`, `private`, `no-cache`, or `no-store`.
-
-Objects are written atomically with mode `0600`. The cache directory is `0700`.
-Object and total-cache limits are configurable. Eviction removes the
-least-recently-used files when the configured total size is exceeded.
-
-Example configuration: [examples/hamsterd.json](examples/hamsterd.json).
+The complete walkthrough, deterministic cache test, use cases, cache policy,
+configuration, and troubleshooting are in
+[Using hamsterd](docs/hamsterd.md). See also the
+[example configuration](examples/hamsterd.json).
 
 ## lemmingd
 
-`lemmingd` lets a browser or command-line client request a real hostname while
-selected paths are served by a local HTTP process. This is useful when testing
-local static assets or frontends against an otherwise remote application.
-
-Run it once to create its configuration, stop it, and add routing rules:
+`lemmingd` combines selected local frontend or backend routes with a real
+remote application. Start it once to create its configuration:
 
 ```sh
 ./bin/lemmingd
-${EDITOR:-vi} "${XDG_CONFIG_HOME:-$HOME/.config}/lemmingd/config.json"
-./bin/lemmingd
 ```
 
-For each rule:
-
-1. `exclude_paths` is checked first.
-2. A matching `include_paths` prefix is rewritten to `http://target`.
-3. A nonmatching path continues to the original HTTPS server.
-4. Domains not present in any rule use a transparent CONNECT tunnel and are not
-   intercepted.
-
-Example configuration: [examples/lemmingd.json](examples/lemmingd.json).
-
-With that example and a local server on port 8000:
-
-```sh
-python3 -m http.server 8000
-curl --proxy http://127.0.0.1:18080 \
-  --cacert "${XDG_CONFIG_HOME:-$HOME/.config}/lemmingd/ca.crt" \
-  https://static.example.com/static/example.txt
-```
+The complete local-frontend/remote-API walkthrough, CORS and HTTPS examples,
+routing semantics, dev-server checklist, and troubleshooting are in
+[Using lemmingd](docs/lemmingd.md). See also the
+[example configuration](examples/lemmingd.json).
 
 ## Configuration
 
