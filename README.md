@@ -18,6 +18,30 @@ first start and never install it into a trust store automatically.
 - A client that supports an HTTP proxy
 - `rpkg`, `rpmbuild`, and `mock` only when building RPMs
 
+## Install from COPR
+
+Ready-made `hamsterd` and `lemmingd` RPM packages are available from the
+unofficial [`vorona/hamsterd`](https://copr.fedorainfracloud.org/coprs/vorona/hamsterd/)
+COPR repository:
+
+```sh
+sudo dnf copr enable vorona/hamsterd
+sudo dnf install hamsterd lemmingd
+```
+
+The packages are currently built for:
+
+| Release | Architectures |
+| --- | --- |
+| Amazon Linux 2023 | `aarch64`, `x86_64` |
+| EPEL 10 | `aarch64`, `x86_64` |
+| Fedora 44 | `aarch64`, `x86_64` |
+| Fedora 45 | `aarch64`, `x86_64` |
+| Fedora Rawhide | `aarch64`, `x86_64` |
+
+These repositories are provided as-is by the project owner. Report package
+issues to the project rather than to distribution Bugzilla instances.
+
 ## Build
 
 ```sh
