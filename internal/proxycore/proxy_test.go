@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 
 	"github.com/BOPOHA/hamsterd/internal/pki"
@@ -83,4 +85,85 @@ func TestServeStopsWithContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestRoundTripperDelegates(t *testing.T) {
+	var calls atomic.Int32
+	wantResponse := &http.Response{StatusCode: http.StatusNoContent}
+	wantError := errors.New("round trip error")
+	adapter := RoundTripper(roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		calls.Add(1)
+		if request.URL.String() != "https://example.test/path" {
+			t.Fatalf("URL = %q", request.URL)
+		}
+		return wantResponse, wantError
+	}))
+	request, _ := http.NewRequest(http.MethodGet, "https://example.test/path", nil)
+	gotResponse, gotError := adapter.RoundTrip(request, &goproxy.ProxyCtx{})
+	if gotResponse != wantResponse || !errors.Is(gotError, wantError) || calls.Load() != 1 {
+		t.Fatalf("result = (%p, %v), calls = %d", gotResponse, gotError, calls.Load())
+	}
+}
+
+func TestServeRejectsInvalidAddress(t *testing.T) {
+	err := Serve(context.Background(), "not an address", http.NotFoundHandler(), log.New(io.Discard, "", 0))
+	if err == nil {
+		t.Fatal("expected invalid listen address to fail")
+	}
+}
+
+func TestCertificateCacheReusesAndEvicts(t *testing.T) {
+	cache := newCertificateCache(1)
+	first := &tls.Certificate{}
+	second := &tls.Certificate{}
+	var calls atomic.Int32
+	generateFirst := func() (*tls.Certificate, error) {
+		calls.Add(1)
+		return first, nil
+	}
+
+	got, err := cache.Fetch("one.example", generateFirst)
+	if err != nil || got != first {
+		t.Fatalf("first fetch = (%p, %v)", got, err)
+	}
+	got, err = cache.Fetch("one.example", func() (*tls.Certificate, error) {
+		t.Fatal("cached certificate regenerated")
+		return nil, nil
+	})
+	if err != nil || got != first {
+		t.Fatalf("cached fetch = (%p, %v)", got, err)
+	}
+	got, err = cache.Fetch("two.example", func() (*tls.Certificate, error) {
+		calls.Add(1)
+		return second, nil
+	})
+	if err != nil || got != second {
+		t.Fatalf("second fetch = (%p, %v)", got, err)
+	}
+	got, err = cache.Fetch("one.example", generateFirst)
+	if err != nil || got != first || calls.Load() != 3 {
+		t.Fatalf("evicted fetch = (%p, %v), calls = %d", got, err, calls.Load())
+	}
+}
+
+func TestCertificateCacheDoesNotStoreGenerationError(t *testing.T) {
+	cache := newCertificateCache(1)
+	want := errors.New("generation failed")
+	if got, err := cache.Fetch("bad.example", func() (*tls.Certificate, error) {
+		return nil, want
+	}); got != nil || !errors.Is(err, want) {
+		t.Fatalf("fetch = (%p, %v)", got, err)
+	}
+	certificate := &tls.Certificate{}
+	if got, err := cache.Fetch("bad.example", func() (*tls.Certificate, error) {
+		return certificate, nil
+	}); got != certificate || err != nil {
+		t.Fatalf("retry = (%p, %v)", got, err)
+	}
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (function roundTripperFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return function(request)
 }
