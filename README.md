@@ -196,12 +196,14 @@ To create the COPR package, select the SCM source type and use:
 | Committish | `main` (or a release tag) |
 | Subdirectory | leave empty |
 | Spec file | `packaging/hamsterd.spec` |
-| Build SRPM with | `rpkg` |
+| Build SRPM with | `make srpm` |
+| Build dependencies | `golang` |
 
 Enable the desired Fedora chroots and trigger a build. The SCM source builder
-uses the repository's `rpkg.conf` and `packaging/rpkg.macros` to download Go
-modules and attach `hamsterd-go-vendor.tar.gz` to the SRPM. The architecture
-builders then compile and test with `-mod=vendor`, without network access.
+uses `.copr/Makefile` to invoke the repository's `rpkg.conf` and
+`packaging/rpkg.macros`, download Go modules, and attach
+`hamsterd-go-vendor.tar.gz` to the SRPM. The architecture builders then compile
+and test with `-mod=vendor`, without network access.
 
 After the first successful build, enable COPR auto-rebuild and add the webhook
 shown under the project's **Settings > Integrations** page to the GitHub
