@@ -1,12 +1,6 @@
 #!/bin/bash
 # Custom rpkg macros for hamsterd. Referenced by rpkg.conf.
 
-# preproc uses a sanitized environment without HOME, so Git cannot read the
-# safe.directory configured by COPR for its bind-mounted checkout.
-export GIT_CONFIG_COUNT=1
-export GIT_CONFIG_KEY_0=safe.directory
-export GIT_CONFIG_VALUE_0="$GIT_ROOT"
-
 # Generate a dependency archive while building the source RPM. The checkout is
 # vendor-free before and after this function runs; mock consumes Source1 without
 # requiring network access.
