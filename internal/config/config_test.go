@@ -224,6 +224,8 @@ func TestValidateRejectsInvalidConfigurations(t *testing.T) {
 		{name: "object size zero", cfg: Config{Version: 1, Listen: "localhost:8080", Cache: Cache{MaxSizeMiB: 2}}, service: Hamsterd, want: "max_object_mib"},
 		{name: "object too large", cfg: Config{Version: 1, Listen: "localhost:8080", Cache: Cache{MaxSizeMiB: 1, MaxObjectMiB: 2}}, service: Hamsterd, want: "max_object_mib"},
 		{name: "TTL", cfg: Config{Version: 1, Listen: "localhost:8080", Cache: Cache{MaxSizeMiB: 2, MaxObjectMiB: 1, DefaultTTL: "later"}}, service: Hamsterd, want: "default_ttl"},
+		{name: "empty domain", cfg: Config{Version: 1, Listen: "localhost:8080", Domains: []string{""}, Cache: validCache}, service: Hamsterd, want: "invalid domain"},
+		{name: "domain with port", cfg: Config{Version: 1, Listen: "localhost:8080", Domains: []string{"example.com:443"}, Cache: validCache}, service: Hamsterd, want: "invalid domain"},
 		{name: "unknown service", cfg: Config{Version: 1, Listen: "localhost:8080", Cache: validCache}, service: Service("other"), want: "unknown service"},
 	}
 	for _, test := range tests {

@@ -206,3 +206,26 @@ func TestInformationHandler(t *testing.T) {
 		t.Fatalf("content disposition = %q", got)
 	}
 }
+
+func TestMatchesDomain(t *testing.T) {
+	tests := []struct {
+		name    string
+		host    string
+		domains []string
+		want    bool
+	}{
+		{name: "empty list preserves intercept all", host: "example.com:443", want: true},
+		{name: "exact", host: "registry.terraform.io:443", domains: []string{"registry.terraform.io"}, want: true},
+		{name: "case insensitive", host: "REGISTRY.TERRAFORM.IO:443", domains: []string{"registry.terraform.io"}, want: true},
+		{name: "trailing dot", host: "registry.terraform.io.:443", domains: []string{"registry.terraform.io"}, want: true},
+		{name: "subdomain is not implicit", host: "other.registry.terraform.io:443", domains: []string{"registry.terraform.io"}, want: false},
+		{name: "not listed", host: "github.com:443", domains: []string{"registry.terraform.io"}, want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := matchesDomain(test.host, test.domains); got != test.want {
+				t.Fatalf("matchesDomain(%q, %v) = %v, want %v", test.host, test.domains, got, test.want)
+			}
+		})
+	}
+}

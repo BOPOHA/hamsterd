@@ -5,6 +5,10 @@ responses on disk. Point a build tool, package manager, browser, or other HTTP
 client at it; the first eligible download is fetched normally and later
 requests for the same URL can be served from the local cache.
 
+For a repeatable Terragrunt example, including selective domain interception,
+client trust, timing, and cache cleanup, see
+[Cache Terraform downloads during Terragrunt runs](hamsterd.howto.md).
+
 It is intended for development downloads, not authenticated application
 traffic and not as a general-purpose shared proxy.
 
@@ -32,7 +36,11 @@ traffic and not as a general-purpose shared proxy.
    uses HTTPS.
 
 4. Run the build or download normally. Inspect the `X-Hamsterd-Cache` response
-   header or the `hamsterd` log to see `MISS`, `HIT`, or `BYPASS`.
+   header or the `hamsterd` log to see `MISS`, `HIT`, `STALE`, or `BYPASS`.
+
+For HTTPS, the log also reports `action=intercept` for allowlisted connections
+and `action=tunnel` for other connections. A tunnel preserves end-to-end TLS,
+so `hamsterd` can log its hostname but cannot see individual request paths.
 
 Opening `http://127.0.0.1:8080/` directly only shows the status page; it does
 not configure the browser or operating system.
@@ -70,6 +78,10 @@ and the second has:
 ```text
 X-Hamsterd-Cache: HIT
 ```
+
+`STALE` means the origin's freshness lifetime has ended, but its
+`stale-while-revalidate` window permits immediate reuse. `hamsterd` returns the
+stored response and refreshes it in the background.
 
 `BYPASS` means the request or response was known to be ineligible before its
 body was streamed. `MISS` means there was no usable cached copy and `hamsterd`
@@ -138,7 +150,8 @@ requests containing:
 
 It also bypasses responses containing:
 
-- `Set-Cookie`, `Vary`, or `Content-Range` headers;
+- `Set-Cookie` or `Content-Range` headers;
+- a `Vary` field other than `Accept-Encoding` or `Origin`;
 - `Cache-Control: private`, `no-cache`, or `no-store`;
 - a non-`200` status;
 - an object larger than `max_object_mib`.
@@ -147,9 +160,11 @@ If a server does not declare its response size, `hamsterd` can discover that it
 is too large only while streaming it. That request can report `MISS`, discard
 the partial cache file, and report `MISS` again next time.
 
-Origin `Cache-Control: max-age` and `Expires` values are honored. If neither is
-present, `default_ttl` is used. The cache key contains the HTTP method and full
-URL, including its query string.
+Origin `Cache-Control: max-age`, `stale-while-revalidate`, and `Expires` values
+are honored. If neither freshness value is present, `default_ttl` is used. The
+cache key contains the HTTP method, full URL including its query string, and
+the request's `Accept-Encoding` and `Origin` values so those supported variants
+cannot be mixed.
 
 This conservative policy prevents personalized or partial responses from being
 replayed as public downloads. It also means authenticated package registries
@@ -180,6 +195,12 @@ A typical configuration is:
 }
 ```
 
+The optional top-level `domains` list limits caching and HTTPS interception to
+exact hostnames. HTTPS traffic for every other hostname is tunneled without TLS
+interception; plain HTTP traffic is forwarded without caching. An omitted or
+empty list preserves the default behavior of caching and intercepting all
+hosts.
+
 An empty `directory` uses `~/.cache/hamsterd/`, or the equivalent below
 `XDG_CACHE_HOME`. `max_size_mib` limits the complete cache, and least-recently
 used entries are removed when necessary. `default_ttl` uses Go duration syntax,
@@ -196,6 +217,9 @@ Restart `hamsterd` after editing its configuration.
 - **A repeated request says `MISS`:** confirm the exact URL is unchanged, the
   first response body was downloaded completely, the entry has not expired,
   and a streaming response did not exceed `max_object_mib`.
+- **A repeated request says `STALE`:** the origin's `max-age` has elapsed, but
+  `stale-while-revalidate` permits immediate reuse while `hamsterd` refreshes
+  the entry in the background.
 - **The cache does not reduce a build's downloads:** confirm that the build tool
   honors the proxy variables and uses the trust store in which the CA was
   installed.
@@ -205,10 +229,11 @@ Restart `hamsterd` after editing its configuration.
 
 ## Security boundaries
 
-`hamsterd` intercepts every HTTPS hostname requested through it. Its CA can
-issue a certificate for any hostname, so protect `ca.key` and keep the proxy on
-loopback. Setting `allow_remote_clients` to `true` permits a non-loopback
-listener but does not add authentication.
+Without a `domains` allowlist, `hamsterd` intercepts every HTTPS hostname
+requested through it. Its CA can issue a certificate for any hostname, so
+protect `ca.key` and keep the proxy on loopback. Setting
+`allow_remote_clients` to `true` permits a non-loopback listener but does not
+add authentication.
 
 Trust the CA only in intended development clients, remove it when finished,
 and never share, publish, or import `ca.key`.

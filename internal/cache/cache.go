@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -36,6 +37,7 @@ type store struct {
 	maxObjectBytes int64
 	defaultTTL     time.Duration
 	mu             sync.Mutex
+	refreshing     map[string]struct{}
 }
 
 type metadata struct {
@@ -48,6 +50,7 @@ type metadata struct {
 	Size       int64       `json:"size"`
 	StoredAt   time.Time   `json:"stored_at"`
 	ExpiresAt  time.Time   `json:"expires_at"`
+	StaleUntil time.Time   `json:"stale_until,omitempty"`
 }
 
 func NewTransport(base http.RoundTripper, config Config) (*Transport, error) {
@@ -76,6 +79,7 @@ func NewTransport(base http.RoundTripper, config Config) (*Transport, error) {
 			maxBytes:       config.MaxBytes,
 			maxObjectBytes: config.MaxObjectBytes,
 			defaultTTL:     config.DefaultTTL,
+			refreshing:     make(map[string]struct{}),
 		},
 	}, nil
 }
@@ -89,14 +93,17 @@ func (t *Transport) RoundTrip(request *http.Request) (*http.Response, error) {
 		return response, err
 	}
 	key := cacheKey(request)
-	if response, ok := t.store.load(key, request); ok {
+	if response, stale, ok := t.store.load(key, request); ok {
+		if stale && t.store.beginRefresh(key) {
+			go t.refresh(key, request)
+		}
 		return response, nil
 	}
 	response, err := t.base.RoundTrip(request)
 	if err != nil {
 		return nil, err
 	}
-	expiresAt, ok := responseExpiration(response, time.Now(), t.store.defaultTTL)
+	expiration, ok := responseExpiration(response, time.Now(), t.store.defaultTTL)
 	if !ok || response.Body == nil || response.ContentLength > t.store.maxObjectBytes {
 		response.Header.Set(statusHeader, "BYPASS")
 		return response, nil
@@ -110,7 +117,8 @@ func (t *Transport) RoundTrip(request *http.Request) (*http.Response, error) {
 		ProtoMinor: response.ProtoMinor,
 		Header:     response.Header.Clone(),
 		StoredAt:   time.Now(),
-		ExpiresAt:  expiresAt,
+		ExpiresAt:  expiration.freshUntil,
+		StaleUntil: expiration.staleUntil,
 	}
 	meta.Header.Del(statusHeader)
 	body, err := t.store.capture(key, response.Body, meta)
@@ -120,6 +128,40 @@ func (t *Transport) RoundTrip(request *http.Request) (*http.Response, error) {
 	}
 	response.Body = body
 	return response, nil
+}
+
+func (t *Transport) refresh(key string, request *http.Request) {
+	defer t.store.endRefresh(key)
+	request = request.Clone(context.Background())
+	response, err := t.base.RoundTrip(request)
+	if err != nil {
+		return
+	}
+	expiration, ok := responseExpiration(response, time.Now(), t.store.defaultTTL)
+	if !ok || response.Body == nil || response.ContentLength > t.store.maxObjectBytes {
+		if response.Body != nil {
+			_ = response.Body.Close()
+		}
+		return
+	}
+	meta := metadata{
+		Status:     response.Status,
+		StatusCode: response.StatusCode,
+		Proto:      response.Proto,
+		ProtoMajor: response.ProtoMajor,
+		ProtoMinor: response.ProtoMinor,
+		Header:     response.Header.Clone(),
+		StoredAt:   time.Now(),
+		ExpiresAt:  expiration.freshUntil,
+		StaleUntil: expiration.staleUntil,
+	}
+	body, err := t.store.capture(key, response.Body, meta)
+	if err != nil {
+		_ = response.Body.Close()
+		return
+	}
+	_, _ = io.Copy(io.Discard, body)
+	_ = body.Close()
 }
 
 func cacheableRequest(request *http.Request) bool {
@@ -135,32 +177,77 @@ func cacheableRequest(request *http.Request) bool {
 	return !noStore && !noCache
 }
 
-func responseExpiration(response *http.Response, now time.Time, defaultTTL time.Duration) (time.Time, bool) {
-	if response.StatusCode != http.StatusOK || response.Header.Get("Set-Cookie") != "" || response.Header.Get("Vary") != "" || response.Header.Get("Content-Range") != "" {
-		return time.Time{}, false
+type expiration struct {
+	freshUntil time.Time
+	staleUntil time.Time
+}
+
+func responseExpiration(response *http.Response, now time.Time, defaultTTL time.Duration) (expiration, bool) {
+	if response.StatusCode != http.StatusOK || response.Header.Get("Set-Cookie") != "" || !supportedVary(response.Header.Values("Vary")) || response.Header.Get("Content-Range") != "" {
+		return expiration{}, false
 	}
 	directives := parseCacheControl(response.Header.Get("Cache-Control"))
 	_, noStore := directives["no-store"]
 	_, noCache := directives["no-cache"]
 	_, private := directives["private"]
 	if noStore || noCache || private {
-		return time.Time{}, false
+		return expiration{}, false
 	}
+	var freshUntil time.Time
 	if raw, ok := directives.value("max-age"); ok {
 		seconds, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil || seconds <= 0 {
-			return time.Time{}, false
+		if err != nil || seconds < 0 {
+			return expiration{}, false
 		}
-		return now.Add(time.Duration(seconds) * time.Second), true
-	}
-	if raw := response.Header.Get("Expires"); raw != "" {
+		age, err := responseAge(response)
+		if err != nil {
+			return expiration{}, false
+		}
+		freshUntil = now.Add(time.Duration(seconds-age) * time.Second)
+	} else if raw := response.Header.Get("Expires"); raw != "" {
 		expiresAt, err := http.ParseTime(raw)
 		if err != nil || !expiresAt.After(now) {
-			return time.Time{}, false
+			return expiration{}, false
 		}
-		return expiresAt, true
+		freshUntil = expiresAt
+	} else {
+		freshUntil = now.Add(defaultTTL)
 	}
-	return now.Add(defaultTTL), true
+	staleUntil := freshUntil
+	if raw, ok := directives.value("stale-while-revalidate"); ok {
+		seconds, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || seconds < 0 {
+			return expiration{}, false
+		}
+		staleUntil = staleUntil.Add(time.Duration(seconds) * time.Second)
+	}
+	result := expiration{freshUntil: freshUntil, staleUntil: staleUntil}
+	return result, staleUntil.After(now)
+}
+
+func responseAge(response *http.Response) (int64, error) {
+	raw := response.Header.Get("Age")
+	if raw == "" {
+		return 0, nil
+	}
+	age, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || age < 0 {
+		return 0, fmt.Errorf("invalid Age header %q", raw)
+	}
+	return age, nil
+}
+
+func supportedVary(values []string) bool {
+	for _, value := range values {
+		for _, field := range strings.Split(value, ",") {
+			switch strings.ToLower(strings.TrimSpace(field)) {
+			case "", "accept-encoding", "origin":
+			default:
+				return false
+			}
+		}
+	}
+	return true
 }
 
 type directives map[string]string
@@ -188,7 +275,10 @@ func parseCacheControl(value string) directives {
 }
 
 func cacheKey(request *http.Request) string {
-	sum := sha256.Sum256([]byte(request.Method + "\n" + request.URL.String()))
+	key := request.Method + "\n" + request.URL.String() +
+		"\naccept-encoding:" + strings.Join(request.Header.Values("Accept-Encoding"), "\x00") +
+		"\norigin:" + strings.Join(request.Header.Values("Origin"), "\x00")
+	sum := sha256.Sum256([]byte(key))
 	return hex.EncodeToString(sum[:])
 }
 
@@ -196,36 +286,46 @@ func (s *store) paths(key string) (string, string) {
 	return filepath.Join(s.directory, key+".json"), filepath.Join(s.directory, key+".body")
 }
 
-func (s *store) load(key string, request *http.Request) (*http.Response, bool) {
+func (s *store) load(key string, request *http.Request) (*http.Response, bool, bool) {
 	metaPath, bodyPath := s.paths(key)
 	metaFile, err := os.Open(metaPath)
 	if err != nil {
-		return nil, false
+		return nil, false, false
 	}
 	var meta metadata
 	err = json.NewDecoder(io.LimitReader(metaFile, 1<<20)).Decode(&meta)
 	_ = metaFile.Close()
-	if err != nil || time.Now().After(meta.ExpiresAt) {
+	staleUntil := meta.StaleUntil
+	if staleUntil.IsZero() {
+		staleUntil = meta.ExpiresAt
+	}
+	now := time.Now()
+	if err != nil || now.After(staleUntil) {
 		s.remove(key)
-		return nil, false
+		return nil, false, false
 	}
 	body, err := os.Open(bodyPath)
 	if err != nil {
 		s.remove(key)
-		return nil, false
+		return nil, false, false
 	}
 	info, err := body.Stat()
 	if err != nil || info.Size() != meta.Size {
 		_ = body.Close()
 		s.remove(key)
-		return nil, false
+		return nil, false, false
 	}
-	now := time.Now()
 	_ = os.Chtimes(metaPath, now, now)
 	_ = os.Chtimes(bodyPath, now, now)
 	header := meta.Header.Clone()
-	header.Set(statusHeader, "HIT")
-	header.Set("Age", strconv.FormatInt(max(0, int64(now.Sub(meta.StoredAt)/time.Second)), 10))
+	stale := now.After(meta.ExpiresAt)
+	if stale {
+		header.Set(statusHeader, "STALE")
+	} else {
+		header.Set(statusHeader, "HIT")
+	}
+	originAge, _ := responseAge(&http.Response{Header: meta.Header})
+	header.Set("Age", strconv.FormatInt(max(0, originAge+int64(now.Sub(meta.StoredAt)/time.Second)), 10))
 	return &http.Response{
 		Status:        meta.Status,
 		StatusCode:    meta.StatusCode,
@@ -236,7 +336,23 @@ func (s *store) load(key string, request *http.Request) (*http.Response, bool) {
 		Body:          body,
 		ContentLength: meta.Size,
 		Request:       request,
-	}, true
+	}, stale, true
+}
+
+func (s *store) beginRefresh(key string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.refreshing[key]; ok {
+		return false
+	}
+	s.refreshing[key] = struct{}{}
+	return true
+}
+
+func (s *store) endRefresh(key string) {
+	s.mu.Lock()
+	delete(s.refreshing, key)
+	s.mu.Unlock()
 }
 
 func (s *store) capture(key string, source io.ReadCloser, meta metadata) (io.ReadCloser, error) {

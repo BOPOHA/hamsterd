@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -204,7 +205,11 @@ func TestResponseExpirationPolicy(t *testing.T) {
 		{name: "default", mutate: func(*http.Response) {}, ok: true},
 		{name: "status", mutate: func(r *http.Response) { r.StatusCode = http.StatusNotFound }},
 		{name: "set cookie", mutate: func(r *http.Response) { r.Header.Set("Set-Cookie", "x=y") }},
-		{name: "vary", mutate: func(r *http.Response) { r.Header.Set("Vary", "Accept") }},
+		{name: "supported vary encoding", mutate: func(r *http.Response) { r.Header.Set("Vary", "Accept-Encoding") }, ok: true},
+		{name: "supported vary origin", mutate: func(r *http.Response) { r.Header.Set("Vary", "Origin") }, ok: true},
+		{name: "supported vary combination", mutate: func(r *http.Response) { r.Header.Set("Vary", "Accept-Encoding, Origin") }, ok: true},
+		{name: "unsupported vary", mutate: func(r *http.Response) { r.Header.Set("Vary", "Accept") }},
+		{name: "vary wildcard", mutate: func(r *http.Response) { r.Header.Set("Vary", "*") }},
 		{name: "content range", mutate: func(r *http.Response) { r.Header.Set("Content-Range", "bytes 0-1/2") }},
 		{name: "no store", mutate: func(r *http.Response) { r.Header.Set("Cache-Control", "no-store") }},
 		{name: "no cache", mutate: func(r *http.Response) { r.Header.Set("Cache-Control", "no-cache") }},
@@ -224,11 +229,135 @@ func TestResponseExpirationPolicy(t *testing.T) {
 			if ok != test.ok {
 				t.Fatalf("ok = %v, want %v; expiry = %v", ok, test.ok, expires)
 			}
-			if ok && !expires.After(now) {
-				t.Fatalf("expiry = %v, want after %v", expires, now)
+			if ok && !expires.freshUntil.After(now) {
+				t.Fatalf("expiry = %v, want after %v", expires.freshUntil, now)
 			}
 		})
 	}
+
+	response := base()
+	response.Header.Set("Cache-Control", "public, max-age=30, stale-while-revalidate=1800")
+	expires, ok := responseExpiration(response, now, time.Hour)
+	if !ok || !expires.freshUntil.Equal(now.Add(30*time.Second)) || !expires.staleUntil.Equal(now.Add(30*time.Second+1800*time.Second)) {
+		t.Fatalf("stale expiry = (%v, %v), want fresh=%v stale=%v", expires, ok, now.Add(30*time.Second), now.Add(30*time.Second+1800*time.Second))
+	}
+	response.Header.Set("Age", "90")
+	expires, ok = responseExpiration(response, now, time.Hour)
+	if !ok || !expires.freshUntil.Equal(now.Add(-60*time.Second)) || !expires.staleUntil.Equal(now.Add(1740*time.Second)) {
+		t.Fatalf("aged stale expiry = (%v, %v), want fresh=%v stale=%v", expires, ok, now.Add(-60*time.Second), now.Add(1740*time.Second))
+	}
+}
+
+func TestCacheSeparatesSupportedVaryHeaders(t *testing.T) {
+	var calls atomic.Int32
+	transport, err := NewTransport(roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		calls.Add(1)
+		result := response(request, request.Header.Get("Origin"), "public, max-age=60")
+		result.Header.Set("Vary", "Origin")
+		return result, nil
+	}), testConfig(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fetchOrigin := func(origin string) string {
+		request, _ := http.NewRequest(http.MethodGet, "https://example.test/file", nil)
+		request.Header.Set("Origin", origin)
+		result, err := transport.RoundTrip(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := io.ReadAll(result.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result.Body.Close()
+		return string(body)
+	}
+
+	if got := fetchOrigin("https://one.example"); got != "https://one.example" {
+		t.Fatalf("first body = %q", got)
+	}
+	if got := fetchOrigin("https://one.example"); got != "https://one.example" {
+		t.Fatalf("cached body = %q", got)
+	}
+	if got := fetchOrigin("https://two.example"); got != "https://two.example" {
+		t.Fatalf("second variant body = %q", got)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("upstream calls = %d, want 2", calls.Load())
+	}
+}
+
+func TestTransportServesStaleWhileRefreshing(t *testing.T) {
+	var calls atomic.Int32
+	transport, err := NewTransport(roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		call := calls.Add(1)
+		body := "old"
+		if call > 1 {
+			body = "new"
+		}
+		result := response(request, body, "public, max-age=60, stale-while-revalidate=60")
+		return result, nil
+	}), testConfig(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request := mustRequest(t, "https://example.test/file")
+	first, err := transport.RoundTrip(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.ReadAll(first.Body)
+	_ = first.Body.Close()
+
+	metaPath, _ := transport.store.paths(cacheKey(request))
+	data, err := os.ReadFile(metaPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var meta metadata
+	if err := json.Unmarshal(data, &meta); err != nil {
+		t.Fatal(err)
+	}
+	meta.ExpiresAt = time.Now().Add(-time.Second)
+	meta.StaleUntil = time.Now().Add(time.Minute)
+	data, err = json.Marshal(meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(metaPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	stale, err := transport.RoundTrip(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleBody, _ := io.ReadAll(stale.Body)
+	_ = stale.Body.Close()
+	if stale.Header.Get(statusHeader) != "STALE" || string(staleBody) != "old" {
+		t.Fatalf("stale response = (%q, %q)", stale.Header.Get(statusHeader), staleBody)
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		refreshed, err := transport.RoundTrip(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(refreshed.Body)
+		_ = refreshed.Body.Close()
+		if refreshed.Header.Get(statusHeader) == "HIT" && string(body) == "new" {
+			if calls.Load() != 2 {
+				t.Fatalf("upstream calls = %d, want 2", calls.Load())
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("background refresh did not replace stale entry")
 }
 
 func TestTransportPropagatesUpstreamError(t *testing.T) {

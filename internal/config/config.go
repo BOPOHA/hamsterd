@@ -69,6 +69,7 @@ type Config struct {
 	Listen             string         `json:"listen"`
 	AllowRemoteClients bool           `json:"allow_remote_clients,omitempty"`
 	AllowRemoteTargets bool           `json:"allow_remote_targets,omitempty"`
+	Domains            []string       `json:"domains,omitempty"`
 	Cache              Cache          `json:"cache,omitempty"`
 	Rules              []RedirectRule `json:"rules,omitempty"`
 }
@@ -229,6 +230,11 @@ func (c Config) Validate(service Service) error {
 	}
 	switch service {
 	case Hamsterd:
+		for _, domain := range c.Domains {
+			if domain == "" || strings.ContainsAny(domain, "/?#:") {
+				return fmt.Errorf("invalid domain %q", domain)
+			}
+		}
 		if c.Cache.MaxSizeMiB <= 0 {
 			return errors.New("cache.max_size_mib must be positive")
 		}

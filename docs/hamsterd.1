@@ -12,6 +12,14 @@ not trusted or installed automatically.
 .PP
 Only complete GET responses with status 200 are cached. Requests containing
 credentials, cookies, ranges, or cache-bypass directives are not cached.
+.B hamsterd
+honors cache freshness and stale-while-revalidate directives.
+.PP
+The optional configuration field
+.B domains
+limits HTTPS interception and caching to a list of exact hostnames. Other
+HTTPS traffic is tunneled unchanged, and other plain HTTP traffic is forwarded
+without caching. An omitted or empty list means all hosts.
 .SH OPTIONS
 .TP
 .BI \-config " path"

@@ -6,7 +6,7 @@ but they have different jobs:
 
 | Command | Purpose | HTTPS behavior |
 | --- | --- | --- |
-| `hamsterd` | Cache public downloads locally to speed up repeated builds. | Intercepts all HTTPS requests so it can cache eligible responses. |
+| `hamsterd` | Cache public downloads locally to speed up repeated builds. | Intercepts all HTTPS hosts by default, or only an optional exact-host allowlist. |
 | `lemmingd` | Route selected domains and URL paths to local development servers. | Intercepts configured domains only; other CONNECT traffic is tunneled unchanged. |
 
 Both commands listen on loopback by default. They generate a unique local CA on
@@ -81,7 +81,8 @@ work. Start it with:
 The complete walkthrough, deterministic cache test, use cases, cache policy,
 configuration, and troubleshooting are in
 [Using hamsterd](docs/hamsterd.md). See also the
-[example configuration](examples/hamsterd.json).
+[example configuration](examples/hamsterd.json) and the
+[Terragrunt caching walkthrough](docs/hamsterd.howto.md).
 
 ## lemmingd
 
@@ -106,6 +107,7 @@ Common options:
 | `version` | Configuration format; currently `1`. |
 | `listen` | Proxy address. Defaults to `127.0.0.1:8080` or `127.0.0.1:18080`. |
 | `allow_remote_clients` | Required before a non-loopback listen address is accepted. It does not provide authentication by itself. |
+| `domains` | `hamsterd` only: exact hostnames to intercept and cache; an empty or omitted list means all hosts. |
 | `allow_remote_targets` | `lemmingd` only: permits routing to non-loopback targets. |
 
 Command-line options override paths or the listen address:

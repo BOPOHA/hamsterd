@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -81,11 +83,20 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	mitm := proxycore.MITM(&ca.Certificate)
-	proxy.OnRequest().HandleConnectFunc(func(host string, _ *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
+	proxy.OnRequest().HandleConnectFunc(func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
+		if !matchesDomain(host, cfg.Domains) {
+			logger.Printf("session=%d method=CONNECT host=%s action=tunnel", ctx.Session, domainHost(host))
+			return proxycore.Tunnel, host
+		}
+		logger.Printf("session=%d method=CONNECT host=%s action=intercept", ctx.Session, domainHost(host))
 		return mitm, host
 	})
 	proxy.OnRequest().DoFunc(func(request *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-		ctx.RoundTripper = proxycore.RoundTripper(cache)
+		if matchesDomain(request.URL.Hostname(), cfg.Domains) {
+			ctx.RoundTripper = proxycore.RoundTripper(cache)
+		} else {
+			ctx.RoundTripper = proxycore.RoundTripper(outbound)
+		}
 		return request, nil
 	})
 	proxy.OnResponse().DoFunc(func(response *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
@@ -114,6 +125,26 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+func matchesDomain(hostPort string, domains []string) bool {
+	if len(domains) == 0 {
+		return true
+	}
+	host := domainHost(hostPort)
+	for _, domain := range domains {
+		if strings.EqualFold(host, strings.TrimSuffix(domain, ".")) {
+			return true
+		}
+	}
+	return false
+}
+
+func domainHost(hostPort string) string {
+	if host, _, err := net.SplitHostPort(hostPort); err == nil {
+		return strings.TrimSuffix(host, ".")
+	}
+	return strings.TrimSuffix(hostPort, ".")
 }
 
 func informationHandler(caPEM []byte) http.Handler {
