@@ -14,4 +14,5 @@ versioning while the project remains below version 1.0.
 - Cache safe `Accept-Encoding` and `Origin` response variants independently.
 - Serve `stale-while-revalidate` entries immediately and refresh them in the
   background.
+- Include the request hostname in intercepted-response write warnings.
 - Add automated tests, binary releases, and source RPM packaging.

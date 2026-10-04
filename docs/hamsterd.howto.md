@@ -121,6 +121,23 @@ normal initialization work. Compare the logs as well as the total elapsed
 time; `hamsterd` is not a replacement for Terragrunt's own download cache or
 Terraform's optional provider plugin cache.
 
+### Example results
+
+One test with `terraform-aws-modules/route53/aws` version `4.1.0` and
+`hashicorp/aws` version `6.65.0` produced:
+
+| Run | hamsterd cache | Elapsed time |
+| --- | --- | ---: |
+| Direct | Not used | 2m 5.839s |
+| First proxied run | Cold | 2m 19.056s |
+| Second proxied run | Warm | 21.394s |
+
+The warm run was almost six times faster than the direct run because the large
+provider ZIP was served locally. The cold proxied run can be slightly slower
+because it downloads and writes the response to the cache simultaneously.
+Results vary with network speed, storage, provider size, and Terraform's own
+caches.
+
 ## 4. Clear both caches and repeat from cold state
 
 Stop `hamsterd` before removing its cache. From the Terragrunt module directory,

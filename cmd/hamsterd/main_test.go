@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -227,5 +228,15 @@ func TestMatchesDomain(t *testing.T) {
 				t.Fatalf("matchesDomain(%q, %v) = %v, want %v", test.host, test.domains, got, test.want)
 			}
 		})
+	}
+}
+
+func TestProxyWarningLoggerAddsRequestHost(t *testing.T) {
+	var output bytes.Buffer
+	logger := newProxyWarningLogger(log.New(&output, "", 0), 2)
+	logger.remember(15, "registry.terraform.io")
+	logger.Printf("[%03d] WARN: Cannot write response from mitm'd client: %v\n", int64(15), "broken pipe")
+	if got := output.String(); !strings.Contains(got, "broken pipe host=registry.terraform.io") {
+		t.Fatalf("warning = %q", got)
 	}
 }

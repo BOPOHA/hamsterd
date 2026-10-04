@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -72,6 +73,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	proxy, outbound := proxycore.New(logger)
+	warningLogger := newProxyWarningLogger(logger, 1024)
+	proxy.Logger = warningLogger
 	cache, err := cachetransport.NewTransport(outbound, cachetransport.Config{
 		Directory:      cfg.Cache.Directory,
 		MaxBytes:       cfg.Cache.MaxSizeMiB * 1024 * 1024,
@@ -92,6 +95,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return mitm, host
 	})
 	proxy.OnRequest().DoFunc(func(request *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+		warningLogger.remember(ctx.Session, request.URL.Hostname())
 		if matchesDomain(request.URL.Hostname(), cfg.Domains) {
 			ctx.RoundTripper = proxycore.RoundTripper(cache)
 		} else {
@@ -125,6 +129,46 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+type proxyWarningLogger struct {
+	base  *log.Logger
+	max   int
+	mu    sync.Mutex
+	hosts map[int64]string
+	order []int64
+}
+
+func newProxyWarningLogger(base *log.Logger, maxEntries int) *proxyWarningLogger {
+	return &proxyWarningLogger{base: base, max: maxEntries, hosts: make(map[int64]string)}
+}
+
+func (logger *proxyWarningLogger) remember(session int64, host string) {
+	logger.mu.Lock()
+	defer logger.mu.Unlock()
+	if _, exists := logger.hosts[session]; !exists {
+		if len(logger.order) >= logger.max {
+			delete(logger.hosts, logger.order[0])
+			logger.order = logger.order[1:]
+		}
+		logger.order = append(logger.order, session)
+	}
+	logger.hosts[session] = host
+}
+
+func (logger *proxyWarningLogger) Printf(format string, arguments ...any) {
+	if strings.Contains(format, "Cannot write response from mitm'd client") && len(arguments) > 0 {
+		if session, ok := arguments[0].(int64); ok {
+			logger.mu.Lock()
+			host := logger.hosts[session]
+			logger.mu.Unlock()
+			if host != "" {
+				format = strings.TrimSuffix(format, "\n") + " host=%s\n"
+				arguments = append(arguments, host)
+			}
+		}
+	}
+	logger.base.Printf(format, arguments...)
 }
 
 func matchesDomain(hostPort string, domains []string) bool {
