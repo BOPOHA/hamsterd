@@ -87,6 +87,10 @@ inclusions, which is why the broad `/` rule does not capture `/api/`.
 Path matching is literal prefix matching. `/api/` does not match the exact path
 `/api`; add both if the application uses both forms.
 
+For a copy-paste walkthrough that replaces the theme of a real static site
+while leaving its HTML remote, see
+[Replace a static site's theme locally](lemmingd.howto.md).
+
 ### Dev-server checklist
 
 Modern frontend dev servers often need a little more than the first page:

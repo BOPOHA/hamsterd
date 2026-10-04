@@ -81,11 +81,14 @@ policies.
 
 With Firefox closed and the NSS tools installed (`nss-tools` on Fedora or
 `libnss3-tools` on Debian/Ubuntu), its profile database can be updated with
-`certutil`. Find the profile directory from `about:profiles`, then run:
+`certutil`. Find the profile directory from `about:profiles`. For example, it
+may be `$HOME/.mozilla/firefox/4iabbri3.default-1748868935931` on Linux or
+`$HOME/Library/Application Support/Firefox/Profiles/abc123.default-release`
+on macOS. Then run:
 
 ```sh
 certutil -A \
-  -d sql:/absolute/path/to/firefox/profile \
+  -d sql:$HOME/.mozilla/firefox/4iabbri3.default-1748868935931 \
   -n "lemmingd local CA" \
   -t "C,," \
   -i "${XDG_CONFIG_HOME:-$HOME/.config}/lemmingd/ca.crt"
@@ -94,8 +97,8 @@ certutil -A \
 List or remove that entry with:
 
 ```sh
-certutil -L -d sql:/absolute/path/to/firefox/profile
-certutil -D -d sql:/absolute/path/to/firefox/profile -n "lemmingd local CA"
+certutil -L -d sql:$HOME/.mozilla/firefox/4iabbri3.default-1748868935931
+certutil -D -d sql:$HOME/.mozilla/firefox/4iabbri3.default-1748868935931 -n "lemmingd local CA"
 ```
 
 Replace the nickname and path for `hamsterd`. Do not guess the profile path or
