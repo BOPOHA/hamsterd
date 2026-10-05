@@ -1,6 +1,6 @@
 # hamsterd and lemmingd
 
-> Two small local HTTP/HTTPS development proxies written in Go. hamsterd caches safe public downloads to accelerate repeated builds. lemmingd replaces selected remote URL paths with content from local development servers.
+> Two focused HTTP/HTTPS development proxies written in Go. hamsterd downloads eligible public artifacts once and reuses them across builds or development machines. lemmingd runs selected routes of a real site locally, under the real HTTPS URL, without a deployment.
 
 Project: https://github.com/BOPOHA/hamsterd
 License: MIT
@@ -14,7 +14,7 @@ License: MIT
 - [lemmingd static-site example](https://github.com/BOPOHA/hamsterd/blob/main/docs/lemmingd.howto.md): replace remote site assets with locally modified content
 - [CA installation](https://github.com/BOPOHA/hamsterd/blob/main/docs/ca-installation.md): trust the generated development CA in browsers and command-line clients
 - [Security policy](https://github.com/BOPOHA/hamsterd/blob/main/SECURITY.md): threat model and vulnerability reporting
-- [Example configurations](https://github.com/BOPOHA/hamsterd/tree/main/examples): ready-to-edit JSON configuration files
+- [Example configurations](https://github.com/BOPOHA/hamsterd/tree/main/examples): ready-to-edit JSON configurations, including an anonymized multi-rule lemmingd setup based on real development use
 
 ## Key facts
 
@@ -24,6 +24,16 @@ License: MIT
 - lemmingd intercepts only configured domains and routes matching path prefixes to configured local targets.
 - Configuration format version is 1. The primary implementation language is Go.
 - Build and verify with `make build`, `make test`, and `make vet`.
+
+## Primary use cases
+
+- Use hamsterd to avoid downloading the same Terraform providers, SDKs, browser binaries, compilers, public fixtures, or other cacheable build inputs on every clean build.
+- Keep hamsterd outside ephemeral CI runners, containers, or development VMs so new environments can reuse earlier downloads.
+- On a controlled development LAN, let several authorized machines reuse one hamsterd cache instead of maintaining a separate tool-specific cache on each machine. This requires explicit remote-client configuration, firewall controls, and CA distribution; hamsterd has no client authentication.
+- Use lemmingd to serve a local `npm run dev` frontend and assets under a real QA or production-like HTTPS hostname while `/api/` continues to use the remote stack. Changes appear on refresh without a build or deployment.
+- Reverse a lemmingd rule to exercise a local API implementation through the already-deployed frontend.
+- Use separate browser-visible frontend and API hostnames to test a local API's real CORS behavior, or preserve one hostname to test same-origin cookies, redirects, OAuth callbacks, service workers, and Secure/SameSite behavior.
+- Route selected assets or API calls to a local replacement, mock, or failure simulator while the rest of the application remains remote.
 
 ## Source layout
 

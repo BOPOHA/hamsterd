@@ -1,16 +1,24 @@
 # Using hamsterd
 
-`hamsterd` is a local HTTP/HTTPS forward proxy that caches safe, public `GET`
+**Download an eligible public artifact once; reuse it across builds and
+development machines.**
+
+`hamsterd` is an HTTP/HTTPS forward proxy that caches safe, public `GET`
 responses on disk. Point a build tool, package manager, browser, or other HTTP
 client at it; the first eligible download is fetched normally and later
-requests for the same URL can be served from the local cache.
+requests for the same URL can be served from the local cache. Because the
+cache is at the HTTP layer, it can work across tools without adding a separate
+filesystem-cache integration to every build system.
 
 For a repeatable Terragrunt example, including selective domain interception,
 client trust, timing, and cache cleanup, see
-[Cache Terraform downloads during Terragrunt runs](hamsterd.howto.md).
+[Cache Terraform downloads during Terragrunt runs](hamsterd.howto.md). In that
+example, the warm-cache run took 21.394 seconds instead of 2 minutes 5.839
+seconds without the proxy—almost six times faster.
 
-It is intended for development downloads, not authenticated application
-traffic and not as a general-purpose shared proxy.
+It is intended for local or controlled-network development downloads, not
+authenticated application traffic and not as an unrestricted general-purpose
+proxy.
 
 ## The basic workflow
 
@@ -112,32 +120,62 @@ Unset the variables when finished:
 unset HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy
 ```
 
-## Common use cases
+## Strong use cases
 
-### 1. Repeated clean builds
+### 1. Repeated builds and infrastructure initialization
 
-Dependency archives and other public build inputs often have stable URLs and
-are downloaded again after cleaning a workspace. `hamsterd` can keep eligible
-responses locally, reducing build time and bandwidth.
+Clean builds and repeated Terraform or Terragrunt initialization often fetch
+the same provider archives, SDKs, compilers, browser binaries, and dependency
+metadata. `hamsterd` keeps eligible responses outside the workspace, reducing
+both elapsed time and internet traffic after the first download.
 
-### 2. Recreating containers or development VMs
+This is especially useful when a tool's own cache is disabled, inconvenient to
+share, or removed along with the build directory.
 
-Ephemeral environments repeatedly fetch the same SDKs, archives, and package
-metadata. If their HTTP client uses the host proxy and trusts its CA, they can
-reuse the host's persistent cache. Exposing the proxy beyond loopback requires
-explicit configuration and network access controls.
+### 2. Ephemeral CI runners, containers, and development VMs
 
-### 3. Large public test fixtures and toolchains
+Disposable environments normally start with an empty filesystem cache. If the
+client uses a persistent `hamsterd` instance and trusts its CA, it can reuse
+downloads from earlier jobs even though the runner, container, or VM itself is
+new.
 
-Repeated downloads of browser binaries, compilers, public datasets, or test
-fixtures can be served locally after the first successful fetch, provided each
-object is below `max_object_mib` and its response is cacheable.
+### 3. One development cache for several tools
 
-### 4. Slow or metered development connections
+A team may otherwise need separate cache directories and CI configuration for
+Terraform providers, browser test binaries, language toolchains, public data,
+and test fixtures. Clients that support an HTTP proxy can share one bounded
+cache instead. Each object must still be below `max_object_mib`, and the origin
+response must be cacheable.
 
-Caching avoids transferring unchanged public resources repeatedly. It can also
-help during a temporary outage while an entry remains present and unexpired,
-but `hamsterd` is not an offline mirror and should not be relied on as one.
+### 4. A trusted development LAN, lab, or build farm
+
+One `hamsterd` instance can serve multiple authorized development machines.
+After a cache miss stores a response, subsequent requests reuse it over the
+local network while the entry remains usable. This is useful for build farms,
+workshops, classrooms, test labs, and teams behind a slow or metered uplink.
+
+This mode is not enabled by default. Bind to a private interface only after
+setting `allow_remote_clients`, restrict access with host or network firewall
+rules, and preferably configure an exact `domains` allowlist. Each client must
+trust the server's public `ca.crt`; never copy `ca.key` to a client. There is no
+built-in client authentication, so do not expose the listener to the internet
+or an untrusted LAN.
+
+### 5. Slow, metered, VPN, or egress-charged connections
+
+Caching avoids transferring unchanged public resources repeatedly and can
+reduce bandwidth or egress cost. It can also help during a temporary outage
+while an entry remains usable, but `hamsterd` is not an offline mirror and
+should not be relied on as one.
+
+## Poor fits
+
+`hamsterd` is deliberately conservative. It is not a replacement for an
+authenticated artifact repository, a content-addressed build cache, or an
+offline mirror. Downloads that use credentials, cookies, range requests,
+private responses, unsupported `Vary` fields, or non-`200` responses are
+bypassed. A cache hit reuses the origin response according to HTTP freshness
+rules; it does not make an artifact reproducible or immutable.
 
 ## What is and is not cached
 

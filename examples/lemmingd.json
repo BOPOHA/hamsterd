@@ -1,17 +1,34 @@
 {
   "version": 1,
   "listen": "127.0.0.1:18080",
+  "allow_remote_clients": false,
+  "allow_remote_targets": false,
   "rules": [
     {
       "target": "127.0.0.1:8000",
       "domains": [
-        "static.example.com"
+        "static.example.com",
+        "static.staging.example.com"
       ],
       "include_paths": [
         "/static/"
       ],
       "exclude_paths": [
         "/static/generated/"
+      ]
+    },
+    {
+      "target": "127.0.0.1:8001",
+      "domains": [
+        "app.example.com",
+        "app.staging.example.com"
+      ],
+      "include_paths": [
+        "/"
+      ],
+      "exclude_paths": [
+        "/api/",
+        "/env.js"
       ]
     }
   ]

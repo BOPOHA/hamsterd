@@ -19,6 +19,20 @@ Authenticated, cookie-bearing, ranged, private, and otherwise ambiguous
 responses are excluded from `hamsterd`'s cache. Cache and key files are private
 to the operating-system user by default.
 
+## Shared development cache
+
+`hamsterd` can serve a trusted development LAN, lab, or build farm, but
+`allow_remote_clients` is only an explicit safety acknowledgement: it does not
+enable authentication or authorization. Bind to a private interface, restrict
+source addresses with host or network firewall rules, and use an exact
+`domains` allowlist whenever practical. Never expose the proxy to the internet
+or an untrusted network.
+
+Authorized clients need the public `ca.crt` to use intercepted HTTPS downloads.
+The server's `ca.key` must remain only on the proxy host. If that key is copied
+or compromised, remove the CA from every client trust store and generate a new
+one before using the proxy again.
+
 ## Historical CA warning
 
 Releases derived from the old `master` and `dev` branches included three public

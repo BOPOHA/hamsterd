@@ -3,7 +3,9 @@
 This copy-paste example changes the theme of
 [Jekyll's website](https://jekyllrb.com/) without changing the site or hosting
 a local copy of its HTML. Jekyll's site is static and loads its stylesheet from
-`/css/screen.css`, so `lemmingd` can replace only the `/css/` directory.
+`/css/screen.css`, so `lemmingd` can replace only the `/css/` directory. An
+edit becomes visible on browser refresh without rebuilding, deploying, or
+creating a preview copy of the complete site.
 
 The browser will receive:
 

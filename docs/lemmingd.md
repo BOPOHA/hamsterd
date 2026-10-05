@@ -1,12 +1,17 @@
 # Using lemmingd
 
+**Run one part of a real site locally, under its real HTTPS URL, without
+deploying it.**
+
 `lemmingd` lets a browser keep using a real HTTPS URL while selected requests
 are served by a development server on your machine. The browser still sees
 `https://app.example.com`; `lemmingd` decides which requests go to the real
 server and which go to `http://127.0.0.1:<port>`.
 
 This is useful when a frontend engineer needs real QA or production-like APIs,
-cookies, redirects, and HTTPS without running the complete backend locally.
+cookies, redirects, and HTTPS without running the complete backend locally. A
+change can go from editor to browser refresh without `npm build`, CI/CD, a
+preview environment, or a deployment.
 
 > **Use QA or another non-production environment whenever possible.** A local
 > frontend can still make real writes through the remote API. It can also send
@@ -53,7 +58,7 @@ cookies, redirects, and HTTPS without running the complete backend locally.
 Opening `http://127.0.0.1:18080/` directly only shows the proxy status page. It
 is not a configuration interface.
 
-## Main example: local frontend, real API
+## Main use case: local frontend, real API, no deployment
 
 Suppose the real application is `https://example.com`, the local frontend runs
 on port `5173`, and the real API is below `/api/`.
@@ -81,11 +86,29 @@ With this rule:
 | `https://example.com/src/app.js` | Local frontend on port `5173` |
 | `https://example.com/api/users` | Real `example.com` server |
 
+Run `npm run dev`, open `https://example.com`, and edit locally. The browser
+loads the new frontend immediately while `/api/` keeps using the real remote
+stack and data. This makes it quick to reproduce a frontend defect, develop a
+fix, or demonstrate a change in its real integration context before creating a
+build or starting a deployment pipeline.
+
 The path and query string are preserved. Exclusions are checked before
 inclusions, which is why the broad `/` rule does not capture `/api/`.
 
 Path matching is literal prefix matching. `/api/` does not match the exact path
 `/api`; add both if the application uses both forms.
+
+The [complete example configuration](../examples/lemmingd.json) is adapted
+from a real development setup and demonstrates more of the available options:
+
+- multiple production-like and staging hostnames sharing one local target;
+- replacing only `/static/` while keeping `/static/generated/` remote;
+- replacing an entire frontend while keeping `/api/` and `/env.js` remote;
+- separate local targets for an asset server and a frontend dev server; and
+- explicit remote-client and remote-target safety settings.
+
+All example hostnames use the reserved `example.com` domain. Replace them with
+domains you are authorized to test.
 
 For a copy-paste walkthrough that replaces the theme of a real static site
 while leaving its HTML remote, see
@@ -132,17 +155,18 @@ route host=example.com path=/ target=127.0.0.1:5173
 If no route line appears, check the browser's proxy settings, domain, and path
 prefixes.
 
-## Common use cases
+## Strong use cases
 
-### 1. Local frontend with a remote API
+### 1. Develop or reproduce a frontend issue without deploying
 
 Use the configuration above: include `/` and exclude `/api/`. The HTML,
 JavaScript, CSS, and other frontend routes come from `npm run dev`, while API
 requests continue to QA, staging, or production.
 
-This is useful for reproducing frontend-only bugs with realistic remote data.
+This is useful for reproducing frontend-only bugs with realistic remote data,
+validating a fix immediately, and demonstrating it before CI/CD finishes.
 Prefer a test account and a non-production environment; the remote API remains
-fully live.
+fully live and can still perform writes.
 
 ### 2. Real frontend with a local API implementation
 
@@ -164,14 +188,14 @@ Reverse the selection so only API paths go to a local backend:
 ```
 
 The deployed UI stays real, but calls below `/api/` reach the backend being
-developed locally. This is handy for checking a response-shape change against a
-deployed frontend.
+developed locally. This is handy for checking a response-shape change or a new
+endpoint against the exact frontend version already deployed.
 
-### 3. Test CORS with HTTPS and a real remote API
+### 3. Develop and test CORS locally under realistic HTTPS origins
 
-Use different browser-visible hostnames for the frontend and API. For example,
-route all of `https://app.qa.example.com/` to the local frontend, but do not add
-a rule for `api.qa.example.com`:
+`localhost` ports alone do not reproduce the hostnames, HTTPS scheme, or
+credentials mode used after deployment. Give the local frontend and API their
+real browser-visible hostnames while routing them to separate local servers:
 
 ```json
 {
@@ -183,14 +207,22 @@ a rule for `api.qa.example.com`:
       "domains": ["app.qa.example.com"],
       "include_paths": ["/"],
       "exclude_paths": []
+    },
+    {
+      "target": "127.0.0.1:3000",
+      "domains": ["api.qa.example.com"],
+      "include_paths": ["/"],
+      "exclude_paths": []
     }
   ]
 }
 ```
 
 Configure the frontend to call `https://api.qa.example.com`. The browser sees
-the frontend origin as `https://app.qa.example.com`, the API connection remains
-remote, and normal browser CORS checks apply.
+two distinct HTTPS origins and applies normal CORS rules, while both servers
+remain local. Edit the local API's `Access-Control-Allow-*` headers and retest
+on refresh. To test the local frontend against the real remote API instead,
+omit the `api.qa.example.com` rule.
 
 If both frontend and API use `https://example.com` with paths such as `/` and
 `/api/`, they are the same origin. That setup is useful, but it does **not**
@@ -216,8 +248,9 @@ localization subtree locally:
 }
 ```
 
-This is a small, low-disruption way to verify an asset fix against the real
-page.
+This is a small, low-disruption way to verify a CSS, JavaScript, image, font,
+translation, or theme fix against the real page. It is also useful when the
+normal asset pipeline requires a full build and deployment for each change.
 
 ### 5. Reproduce HTTPS-only browser behavior
 
@@ -229,6 +262,22 @@ forwards selected paths to the local HTTP server.
 
 This reproduces the browser-visible scheme and hostname, but it does not
 reproduce every property of the deployed edge, CDN, or production TLS setup.
+
+### 6. Route selected calls to a local mock or failure simulator
+
+Point an API path at a local mock server while leaving the UI and every other
+route remote. The mock can return rare error codes, slow responses, empty
+results, expired data, or malformed payloads that are difficult or unsafe to
+create in a shared environment. This is useful for error-state development and
+deterministic browser tests.
+
+### 7. Run browser, visual, and accessibility tests with realistic data
+
+An automated browser configured to use `lemmingd` can exercise a local
+frontend under the real hostname while its data continues to come from a QA or
+staging API. This gives visual, accessibility, and end-to-end tests realistic
+integration behavior without publishing the frontend build first. Keep test
+data controlled: remote API actions are not sandboxed by `lemmingd`.
 
 ## How rules work
 

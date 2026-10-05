@@ -1,16 +1,62 @@
 # hamsterd and lemmingd
 
-This repository contains two small local HTTP/HTTPS development proxies. They
-share secure proxy, configuration, and certificate-authority infrastructure,
-but they have different jobs:
+This repository contains two focused HTTP/HTTPS development proxies:
+`hamsterd` downloads an eligible public artifact once and reuses it across
+builds or development machines; `lemmingd` runs one part of a real site
+locally, under its real HTTPS URL, without waiting for a deployment.
+
+They share secure proxy, configuration, and certificate-authority
+infrastructure, but they have different jobs:
 
 | Command | Purpose | HTTPS behavior |
 | --- | --- | --- |
-| `hamsterd` | Cache public downloads locally to speed up repeated builds. | Intercepts all HTTPS hosts by default, or only an optional exact-host allowlist. |
-| `lemmingd` | Route selected domains and URL paths to local development servers. | Intercepts configured domains only; other CONNECT traffic is tunneled unchanged. |
+| `hamsterd` | Download once; reuse across builds, ephemeral environments, or a controlled development network. | Intercepts all HTTPS hosts by default, or only an optional exact-host allowlist. |
+| `lemmingd` | Replace selected routes of a real site with a local frontend, API, mock, or asset server. | Intercepts configured domains only; other CONNECT traffic is tunneled unchanged. |
 
 Both commands listen on loopback by default. They generate a unique local CA on
 first start and never install it into a trust store automatically.
+
+## What they solve
+
+### Download once, reuse anywhere in development
+
+A clean build, disposable CI runner, container, or VM may download the same
+provider, SDK, browser, compiler, or test fixture every time. Tool-specific
+filesystem caches solve only one tool at a time and are often discarded with
+the environment. `hamsterd` caches at the HTTP layer, so multiple tools and
+machines can reuse the same eligible public response.
+
+In the measured Terragrunt example, a run that took **2m 5.839s** without the
+proxy took **21.394s** with a warm `hamsterd` cache—almost six times faster.
+See the [complete benchmark and setup](docs/hamsterd.howto.md).
+
+The default is a private, loopback-only cache. It can also serve trusted
+clients on a controlled development network, so repeated requests for a usable
+cache entry stay on the local network. That mode requires explicit
+configuration, firewall rules, and distribution of the public CA certificate;
+`hamsterd` does not provide client authentication.
+
+### Develop against a real site without deploying
+
+Suppose `https://app.example.com` serves its API below `/api/`, while a local
+`npm run dev` server provides the frontend and `/assets/`. `lemmingd` can send
+the frontend routes to localhost and leave `/api/` on the real server:
+
+| Browser-visible request | Served by |
+| --- | --- |
+| `https://app.example.com/` | Local frontend |
+| `https://app.example.com/assets/app.js` | Local frontend |
+| `https://app.example.com/api/users` | Real remote API |
+
+The browser keeps the real HTTPS scheme, hostname, cookies, redirects, and API
+behavior. Frontend changes appear on refresh—without `npm build`, CI/CD, a
+preview environment, or a deployment. Reverse the rule to test a local API
+against the deployed frontend, or give local frontend and API servers separate
+browser-visible hostnames to exercise real browser CORS checks and iterate on
+the local API's CORS headers.
+
+Use QA or staging whenever possible. If the remote routes point to production,
+its data and side effects remain real.
 
 ## User guides
 
@@ -73,8 +119,8 @@ Version output identifies the kind of build without empty metadata fields:
 
 ## hamsterd
 
-`hamsterd` caches eligible public downloads for repeated builds and development
-work. Start it with:
+`hamsterd` caches eligible public downloads for repeated builds, disposable
+environments, and controlled shared development caches. Start it with:
 
 ```sh
 ./bin/hamsterd
@@ -88,8 +134,8 @@ configuration, and troubleshooting are in
 
 ## lemmingd
 
-`lemmingd` combines selected local frontend or backend routes with a real
-remote application. Start it once to create its configuration:
+`lemmingd` combines selected local frontend, backend, mock, or asset routes
+with a real remote application. Start it once to create its configuration:
 
 ```sh
 ./bin/lemmingd
@@ -98,7 +144,8 @@ remote application. Start it once to create its configuration:
 The complete local-frontend/remote-API walkthrough, CORS and HTTPS examples,
 routing semantics, dev-server checklist, and troubleshooting are in
 [Using lemmingd](docs/lemmingd.md). See also the
-[example configuration](examples/lemmingd.json).
+[multi-rule example configuration](examples/lemmingd.json), adapted and
+anonymized from a real development setup.
 
 ## Configuration
 
@@ -150,8 +197,8 @@ make build      # current-platform binaries
 make all        # release-style cross-builds
 ```
 
-The test suite uses only local temporary servers; it does not require external
-HTTP services.
+The race-enabled test suite uses only local temporary servers; it does not
+require external HTTP services.
 
 ## RPM and COPR builds
 

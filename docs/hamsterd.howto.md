@@ -2,7 +2,11 @@
 
 This copy-paste example uses `hamsterd` to cache large HashiCorp provider
 downloads and eligible Terraform Registry metadata during repeated
-`terragrunt init` runs. It intercepts only the two relevant hosts:
+`terragrunt init` runs. In one measured run, a warm cache reduced elapsed time
+from **2m 5.839s** to **21.394s**—almost six times faster—without changing the
+Terraform or Terragrunt project.
+
+The example intercepts only the two relevant hosts:
 
 - `registry.terraform.io`
 - `releases.hashicorp.com`
