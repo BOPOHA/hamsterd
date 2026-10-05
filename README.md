@@ -14,6 +14,8 @@ first start and never install it into a trust store automatically.
 
 ## User guides
 
+- [AI/LLM project index](llms.txt) provides a compact map of the project and
+  its authoritative documentation.
 - [Use lemmingd](docs/lemmingd.md) to combine a local frontend or backend with
   selected routes from a real QA, staging, or production-like site.
 - [Use hamsterd](docs/hamsterd.md) to cache eligible public development

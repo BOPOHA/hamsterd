@@ -2,7 +2,7 @@
 %global debug_package %{nil}
 
 Name:           hamsterd
-Version:        0.1.0
+Version:        0.1.1
 Release:        1%{?dist}
 Summary:        Local caching HTTP and HTTPS development proxy
 
@@ -68,6 +68,7 @@ for package in hamsterd lemmingd; do
     # Keep the repository layout so relative links in README.md also work in
     # installed package documentation.
     install -Dm644 README.md %{buildroot}%{_docdir}/${package}/README.md
+    install -Dm644 llms.txt %{buildroot}%{_docdir}/${package}/llms.txt
     install -Dm644 SECURITY.md %{buildroot}%{_docdir}/${package}/SECURITY.md
     install -Dm644 CHANGELOG.md %{buildroot}%{_docdir}/${package}/CHANGELOG.md
     install -d %{buildroot}%{_docdir}/${package}/docs
@@ -89,6 +90,11 @@ done
 %{_mandir}/man1/lemmingd.1*
 
 %changelog
+* Mon Oct 05 2026 Anatolii Vorona <vorona.tolik@gmail.com> - 0.1.1-1
+- Add selective domain interception for hamsterd and tunnel other HTTPS hosts
+- Cache supported response variants and honor stale-while-revalidate
+- Add a Terragrunt caching walkthrough and an AI-readable documentation index
+
 * Fri Sep 25 2026 Anatolii Vorona <vorona.tolik@gmail.com> - 0.1.0-1
 - Modernize the proxy core, certificate handling, cache, tests, and packaging
 - Build hamsterd and lemmingd as separate packages from one source RPM

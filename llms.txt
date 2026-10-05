@@ -1,0 +1,39 @@
+# hamsterd and lemmingd
+
+> Two small local HTTP/HTTPS development proxies written in Go. hamsterd caches safe public downloads to accelerate repeated builds. lemmingd replaces selected remote URL paths with content from local development servers.
+
+Project: https://github.com/BOPOHA/hamsterd
+License: MIT
+
+## Start here
+
+- [Project overview](https://github.com/BOPOHA/hamsterd/blob/main/README.md): installation, building, security, and development commands
+- [hamsterd guide](https://github.com/BOPOHA/hamsterd/blob/main/docs/hamsterd.md): cache behavior, configuration, supported HTTP semantics, and troubleshooting
+- [Terragrunt cache example](https://github.com/BOPOHA/hamsterd/blob/main/docs/hamsterd.howto.md): copy-paste workflow for caching Terraform Registry and HashiCorp release downloads
+- [lemmingd guide](https://github.com/BOPOHA/hamsterd/blob/main/docs/lemmingd.md): route selected domains and paths to local development servers
+- [lemmingd static-site example](https://github.com/BOPOHA/hamsterd/blob/main/docs/lemmingd.howto.md): replace remote site assets with locally modified content
+- [CA installation](https://github.com/BOPOHA/hamsterd/blob/main/docs/ca-installation.md): trust the generated development CA in browsers and command-line clients
+- [Security policy](https://github.com/BOPOHA/hamsterd/blob/main/SECURITY.md): threat model and vulnerability reporting
+- [Example configurations](https://github.com/BOPOHA/hamsterd/tree/main/examples): ready-to-edit JSON configuration files
+
+## Key facts
+
+- Both programs are forward proxies and listen only on loopback by default.
+- Each program creates its own local certificate authority; private CA keys must never be published.
+- hamsterd caches only eligible complete public GET responses and supports selective exact-host interception.
+- lemmingd intercepts only configured domains and routes matching path prefixes to configured local targets.
+- Configuration format version is 1. The primary implementation language is Go.
+- Build and verify with `make build`, `make test`, and `make vet`.
+
+## Source layout
+
+- `cmd/hamsterd/`: hamsterd executable
+- `cmd/lemmingd/`: lemmingd executable
+- `internal/`: shared and program-specific implementation packages
+- `examples/`: example JSON configurations
+- `docs/`: user guides, walkthroughs, and manual pages
+- `packaging/`: RPM packaging
+
+## Optional
+
+- [Changelog](https://github.com/BOPOHA/hamsterd/blob/main/CHANGELOG.md): notable changes by release

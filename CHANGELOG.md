@@ -3,7 +3,7 @@
 All notable changes will be documented in this file. Releases follow semantic
 versioning while the project remains below version 1.0.
 
-## Unreleased
+## [0.1.1] - 2026-10-05
 
 - Replace the unmaintained proxy and cache forks.
 - Generate a unique local CA instead of distributing a shared private key.
