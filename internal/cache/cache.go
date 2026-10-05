@@ -93,8 +93,8 @@ func (t *Transport) RoundTrip(request *http.Request) (*http.Response, error) {
 		return response, err
 	}
 	key := cacheKey(request)
-	if response, stale, ok := t.store.load(key, request); ok {
-		if stale && t.store.beginRefresh(key) {
+	if response, refresh, ok := t.store.load(key, request); ok {
+		if refresh {
 			go t.refresh(key, request)
 		}
 		return response, nil
@@ -287,6 +287,9 @@ func (s *store) paths(key string) (string, string) {
 }
 
 func (s *store) load(key string, request *http.Request) (*http.Response, bool, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	metaPath, bodyPath := s.paths(key)
 	metaFile, err := os.Open(metaPath)
 	if err != nil {
@@ -326,7 +329,7 @@ func (s *store) load(key string, request *http.Request) (*http.Response, bool, b
 	}
 	originAge, _ := responseAge(&http.Response{Header: meta.Header})
 	header.Set("Age", strconv.FormatInt(max(0, originAge+int64(now.Sub(meta.StoredAt)/time.Second)), 10))
-	return &http.Response{
+	response := &http.Response{
 		Status:        meta.Status,
 		StatusCode:    meta.StatusCode,
 		Proto:         meta.Proto,
@@ -336,17 +339,15 @@ func (s *store) load(key string, request *http.Request) (*http.Response, bool, b
 		Body:          body,
 		ContentLength: meta.Size,
 		Request:       request,
-	}, stale, true
-}
-
-func (s *store) beginRefresh(key string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, ok := s.refreshing[key]; ok {
-		return false
 	}
-	s.refreshing[key] = struct{}{}
-	return true
+	refresh := false
+	if stale {
+		if _, refreshing := s.refreshing[key]; !refreshing {
+			s.refreshing[key] = struct{}{}
+			refresh = true
+		}
+	}
+	return response, refresh, true
 }
 
 func (s *store) endRefresh(key string) {
