@@ -87,6 +87,33 @@ func TestServeStopsWithContext(t *testing.T) {
 	}
 }
 
+func TestServeAfterListenRunsCallback(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	called := false
+	err := ServeAfterListen(ctx, "127.0.0.1:0", http.NotFoundHandler(), log.New(io.Discard, "", 0), func() error {
+		called = true
+		cancel()
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Fatal("ready callback was not called")
+	}
+}
+
+func TestServeAfterListenReturnsCallbackError(t *testing.T) {
+	want := errors.New("client launch failed")
+	err := ServeAfterListen(context.Background(), "127.0.0.1:0", http.NotFoundHandler(), log.New(io.Discard, "", 0), func() error {
+		return want
+	})
+	if !errors.Is(err, want) {
+		t.Fatalf("error = %v, want callback error", err)
+	}
+}
+
 func TestRoundTripperDelegates(t *testing.T) {
 	var calls atomic.Int32
 	wantResponse := &http.Response{StatusCode: http.StatusNoContent}

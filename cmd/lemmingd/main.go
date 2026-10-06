@@ -9,21 +9,29 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/BOPOHA/hamsterd/internal/buildinfo"
 	"github.com/BOPOHA/hamsterd/internal/config"
+	"github.com/BOPOHA/hamsterd/internal/firefox"
 	"github.com/BOPOHA/hamsterd/internal/pki"
 	"github.com/BOPOHA/hamsterd/internal/proxycore"
 	"github.com/BOPOHA/hamsterd/internal/redirect"
 	"github.com/elazarl/goproxy"
 )
 
+var launchFirefox = firefox.Launch
+
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
+	firefoxMode := len(args) > 0 && args[0] == "firefox"
+	if firefoxMode {
+		args = args[1:]
+	}
 	paths, err := config.DefaultPaths(config.Lemmingd)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
@@ -35,6 +43,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	caCertPath := flags.String("cacert", paths.CACert, "CA certificate file")
 	caKeyPath := flags.String("cakey", paths.CAKey, "CA private-key file")
 	listen := flags.String("listen", "", "override the configured listen address")
+	firefoxBinary := flags.String("firefox-bin", "", "Firefox executable for the firefox command")
+	nssCertutil := flags.String("nss-certutil", "", "NSS certutil executable for the firefox command")
 	showVersion := flags.Bool("version", false, "print version information")
 	if err := flags.Parse(args); err != nil {
 		return 2
@@ -42,6 +52,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if *showVersion {
 		fmt.Fprintf(stdout, "lemmingd %s\n", buildinfo.Version)
 		return 0
+	}
+	if firefoxMode && flags.NArg() != 1 {
+		fmt.Fprintln(stderr, "usage: lemmingd firefox [options] URL")
+		return 2
 	}
 
 	logger := log.New(stderr, "lemmingd: ", log.LstdFlags|log.LUTC)
@@ -95,7 +109,26 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := proxycore.Serve(ctx, cfg.Listen, proxy, logger); err != nil {
+	var onReady func() error
+	if firefoxMode {
+		profile := filepath.Join(filepath.Dir(*configPath), "firefox-profile")
+		browserURL := flags.Arg(0)
+		onReady = func() error {
+			if err := launchFirefox(firefox.Config{
+				Profile:       profile,
+				CACertificate: *caCertPath,
+				ProxyAddress:  cfg.Listen,
+				URL:           browserURL,
+				Binary:        *firefoxBinary,
+				NSSCertutil:   *nssCertutil,
+			}); err != nil {
+				return fmt.Errorf("prepare Firefox: %w", err)
+			}
+			logger.Printf("started Firefox with isolated lemmingd profile %s", profile)
+			return nil
+		}
+	}
+	if err := proxycore.ServeAfterListen(ctx, cfg.Listen, proxy, logger, onReady); err != nil {
 		logger.Printf("server error: %v", err)
 		return 1
 	}

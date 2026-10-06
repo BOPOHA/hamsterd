@@ -54,6 +54,13 @@ func RoundTripper(transport http.RoundTripper) goproxy.RoundTripper {
 }
 
 func Serve(ctx context.Context, address string, handler http.Handler, logger *log.Logger) error {
+	return ServeAfterListen(ctx, address, handler, logger, nil)
+}
+
+// ServeAfterListen runs onReady after the listener is accepting connections and
+// before waiting for shutdown. It is useful for launching a client configured
+// to use the newly started proxy.
+func ServeAfterListen(ctx context.Context, address string, handler http.Handler, logger *log.Logger, onReady func() error) error {
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return err
@@ -70,6 +77,11 @@ func Serve(ctx context.Context, address string, handler http.Handler, logger *lo
 		result <- server.Serve(listener)
 	}()
 	logger.Printf("listening on http://%s", listener.Addr())
+	if onReady != nil {
+		if err := onReady(); err != nil {
+			return errors.Join(err, stopServer(server, result))
+		}
+	}
 	select {
 	case err := <-result:
 		if errors.Is(err, http.ErrServerClosed) {
@@ -77,17 +89,22 @@ func Serve(ctx context.Context, address string, handler http.Handler, logger *lo
 		}
 		return err
 	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := server.Shutdown(shutdownCtx); err != nil {
-			return err
-		}
-		err := <-result
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
-		}
-		return err
+		return stopServer(server, result)
 	}
+}
+
+func stopServer(server *http.Server, result <-chan error) error {
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	shutdownErr := server.Shutdown(shutdownCtx)
+	if shutdownErr != nil {
+		shutdownErr = errors.Join(shutdownErr, server.Close())
+	}
+	serveErr := <-result
+	if errors.Is(serveErr, http.ErrServerClosed) {
+		serveErr = nil
+	}
+	return errors.Join(shutdownErr, serveErr)
 }
 
 type certificateCache struct {

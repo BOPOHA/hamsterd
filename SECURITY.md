@@ -15,6 +15,13 @@ authority.
 - Do not enable remote clients without separate network access controls.
 - Keep upstream TLS verification enabled.
 
+The optional `lemmingd firefox URL` command installs only the public lemmingd
+CA into a dedicated Firefox profile; it does not modify the default Firefox
+profile or an operating-system trust store. That managed profile can retain
+cookies, history, sessions, saved logins, and other authenticated browsing
+state. Close it when testing is complete, protect it as sensitive development
+data, and remove the dedicated profile when it is no longer needed.
+
 Authenticated, cookie-bearing, ranged, private, and otherwise ambiguous
 responses are excluded from `hamsterd`'s cache. Cache and key files are private
 to the operating-system user by default.

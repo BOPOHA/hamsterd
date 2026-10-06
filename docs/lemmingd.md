@@ -58,6 +58,78 @@ preview environment, or a deployment.
 Opening `http://127.0.0.1:18080/` directly only shows the proxy status page. It
 is not a configuration interface.
 
+## Launch an isolated Firefox profile
+
+For a side-by-side direct-versus-proxied browser session, lemmingd can prepare
+and launch its own Firefox profile:
+
+```sh
+lemmingd firefox https://www.foo-bar-example.test/
+```
+
+The command starts lemmingd, creates or reuses `firefox-profile` beside its
+`config.json`, imports lemmingd's public `ca.crt` into that profile, configures
+its HTTP and HTTPS proxy with lemmingd's effective listen address, and launches
+Firefox with that profile. The default is `127.0.0.1:18080`; a wildcard listen
+address, including `:18080`, is converted to a loopback address for the local
+browser. The command does not modify Firefox's default profile or Firefox's
+`profiles.ini`. A normal Firefox instance can therefore stay direct while the
+lemmingd-managed instance shows a configured local or migration target.
+
+Install `certutil` first: `nss-tools` on Fedora/RHEL or `libnss3-tools` on
+Debian/Ubuntu. The command fails rather than disabling TLS verification when
+that prerequisite is unavailable. The RPM recommends `nss-tools`; install it
+explicitly if weak dependencies are disabled. Lemmingd refuses to modify a
+managed profile while either Firefox itself or another lemmingd launcher holds
+it open. To use a non-standard Firefox executable, pass `-firefox-bin` before
+the URL:
+
+```sh
+lemmingd firefox -firefox-bin /path/to/firefox https://www.foo-bar-example.test/
+```
+
+The managed profile normally lives at `~/.config/lemmingd/firefox-profile/` on
+Linux, `~/Library/Application Support/lemmingd/firefox-profile/` on macOS, and
+`%AppData%\lemmingd\firefox-profile\` on Windows. Firefox is found
+automatically from `PATH`, from `/Applications/Firefox.app` or
+`~/Applications/Firefox.app` on macOS, and from the usual Program Files or
+per-user installation locations on Windows. Pass `-firefox-bin PATH` when it
+is installed elsewhere. On Windows, pass
+`-nss-certutil PATH` for the NSS `certutil` executable: Windows' built-in
+`certutil.exe` is a different program and cannot configure Firefox trust.
+
+On macOS, install NSS with your package manager, for example `brew install
+nss`. Homebrew normally places the executable at
+`/opt/homebrew/opt/nss/bin/certutil` on Apple Silicon or
+`/usr/local/opt/nss/bin/certutil` on Intel Macs; make it available on `PATH` or
+pass that absolute path with `-nss-certutil`. On Windows, automated CA setup
+requires a separately supplied Mozilla NSS `certutil.exe`; pass it through
+`-nss-certutil` and do not substitute the Windows system utility. Lemmingd does
+not bundle an NSS distribution for Windows. It intentionally does not add its
+CA to the macOS Keychain or Windows certificate store, because that would trust
+the CA outside the isolated Firefox profile.
+
+The managed profile retains its own cookies, history, sessions, saved logins,
+and other Firefox data. Treat it as sensitive development data. Closing Firefox
+does not stop lemmingd. Lemmingd does not explicitly close Firefox when it
+stops, though terminal-delivered signals can also reach Firefox; close both when
+finished. A Firefox window left open after lemmingd stops remains configured
+for the now-unavailable proxy. Start normal
+`lemmingd` again and reload that existing window, or close Firefox and stop any
+existing lemmingd process before using `lemmingd firefox URL` again. The
+combined command starts a new proxy; it cannot attach to one already listening.
+
+To remove the profile, first close its Firefox window and lemmingd, then delete
+only the `firefox-profile` directory shown in the startup log. This removes its
+CA trust and all browsing data stored in that managed profile; it does not
+affect the normal Firefox profile. A stale launcher lease left by a crash is
+replaced automatically once Firefox's native profile lock is gone. If Firefox
+itself crashed and left one of its profile-lock files behind, first confirm that
+no Firefox process still uses this profile before removing that lock file and
+retrying. A lemmingd crash during profile preparation can instead leave its
+`.lemmingd-firefox.prepare` directory; after confirming that no other lemmingd
+process is preparing this profile, remove that directory and retry.
+
 ## Main use case: local frontend, real API, no deployment
 
 Suppose the real application is `https://example.com`, the local frontend runs
@@ -380,6 +452,11 @@ Use separate rules for separate domains:
 Several domains can share one target by listing them in the same rule.
 
 ## Troubleshooting
+
+- **A `broken pipe` warning appears while browsing:** a browser commonly
+  cancels speculative, navigated-away, or closed connections. This warning is
+  normally harmless when the requested page still loads; investigate it only
+  when it accompanies a reproducible failed request.
 
 - **The proxy page opens, but the site is unchanged:** opening port `18080`
   directly is only a health check. Configure the browser's proxy and then open

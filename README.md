@@ -13,8 +13,10 @@ infrastructure, but they have different jobs:
 | `hamsterd` | Download once; reuse across builds, ephemeral environments, or a controlled development network. | Intercepts all HTTPS hosts by default, or only an optional exact-host allowlist. |
 | `lemmingd` | Replace selected routes of a real site with a local frontend, API, mock, asset server, or alternate hosting origin. | Intercepts configured domains only; other CONNECT traffic is tunneled unchanged. |
 
-Both commands listen on loopback by default. They generate a unique local CA on
-first start and never install it into a trust store automatically.
+Both commands listen on loopback by default and generate a unique local CA on
+first start. Normal server mode never installs it into a trust store. The
+optional `lemmingd firefox` command imports the public CA only into its
+dedicated Firefox profile.
 
 ## What they solve
 
@@ -84,6 +86,7 @@ interactive browser session.
 
 - Go 1.25 or newer
 - A client that supports an HTTP proxy
+- Firefox and Mozilla NSS `certutil` only when using `lemmingd firefox`
 - `rpkg`, `rpmbuild`, and `mock` only when building RPMs
 
 ## Install from COPR
@@ -160,6 +163,19 @@ troubleshooting are in
 [multi-rule example configuration](examples/lemmingd.json), adapted and
 anonymized from a real development setup.
 
+To launch an isolated Firefox instance that is already configured to use
+lemmingd and trust its CA, install `certutil` (`nss-tools` on Fedora/RHEL or
+`libnss3-tools` on Debian/Ubuntu), then run:
+
+```sh
+./bin/lemmingd firefox https://app.example.com/
+```
+
+It creates or reuses a lemmingd-owned Firefox profile beside the lemmingd
+configuration. Your usual Firefox profile remains direct and unchanged.
+On Windows, pass `-nss-certutil PATH` for the NSS `certutil` executable; the
+built-in Windows `certutil.exe` cannot configure Firefox trust.
+
 ## Configuration
 
 Common options:
@@ -172,13 +188,17 @@ Common options:
 | `domains` | `hamsterd` only: exact hostnames to intercept and cache; an empty or omitted list means all hosts. |
 | `allow_remote_targets` | `lemmingd` only: permits routing to non-loopback targets. |
 
-Command-line options override paths or the listen address:
+Command-line options override paths or the listen address. The Firefox launcher
+is `lemmingd firefox [options] URL`; its two Firefox-specific options are
+marked below:
 
 ```text
 -config PATH
 -cacert PATH
 -cakey PATH
 -listen HOST:PORT
+-firefox-bin PATH        # lemmingd firefox only
+-nss-certutil PATH       # lemmingd firefox only
 -version
 ```
 

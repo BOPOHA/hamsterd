@@ -2,7 +2,7 @@
 %global debug_package %{nil}
 
 Name:           hamsterd
-Version:        0.1.2
+Version:        0.1.3
 Release:        1%{?dist}
 Summary:        Local caching HTTP and HTTPS development proxy
 
@@ -28,6 +28,7 @@ installs trust automatically.
 %package -n lemmingd
 Summary:        Selective local-development HTTP and HTTPS proxy
 License:        MIT AND BSD-3-Clause
+Recommends:     nss-tools
 Provides:       bundled(golang(github.com/elazarl/goproxy)) = 1.9.1
 Provides:       bundled(golang(golang.org/x/net)) = 0.51.0
 Provides:       bundled(golang(golang.org/x/text)) = 0.34.0
@@ -35,7 +36,8 @@ Provides:       bundled(golang(golang.org/x/text)) = 0.34.0
 %description -n lemmingd
 lemmingd intercepts configured development domains and routes selected URL paths
 to local HTTP servers or explicitly allowed remote origins. Other domains are
-passed through without TLS interception.
+passed through without TLS interception. Its optional Firefox command launches a
+dedicated browser profile with profile-local proxy settings and CA trust.
 
 %prep
 %setup -T -b 0 -q -n hamsterd
@@ -90,6 +92,10 @@ done
 %{_mandir}/man1/lemmingd.1*
 
 %changelog
+* Wed Oct 07 2026 Anatolii Vorona <vorona.tolik@gmail.com> - 0.1.3-1
+- Add an isolated Firefox profile launcher with local proxy and CA setup
+- Recommend NSS certutil tools for the optional Firefox launcher
+
 * Tue Oct 06 2026 Anatolii Vorona <vorona.tolik@gmail.com> - 0.1.2-1
 - Preserve the browser-visible Host header when lemmingd routes a request
 - Support HTTPS targets on port 443 for hosting-migration previews

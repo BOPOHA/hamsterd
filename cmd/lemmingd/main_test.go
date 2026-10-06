@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/BOPOHA/hamsterd/internal/firefox"
 )
 
 func TestRunVersionAndFlagErrors(t *testing.T) {
@@ -29,6 +32,14 @@ func TestRunVersionAndFlagErrors(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "flag provided but not defined") {
 		t.Fatalf("invalid flag stderr = %q", stderr.String())
+	}
+
+	stderr.Reset()
+	if code := run([]string{"firefox"}, &stdout, &stderr); code != 2 {
+		t.Fatalf("firefox without URL exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "lemmingd firefox") {
+		t.Fatalf("firefox usage stderr = %q", stderr.String())
 	}
 }
 
@@ -70,6 +81,44 @@ func TestRunCreatesFilesBeforeOccupiedListenerError(t *testing.T) {
 			t.Errorf("expected %s to be created: %v", name, err)
 		}
 	}
+}
+
+func TestRunFirefoxLaunchFailureStopsServer(t *testing.T) {
+	configHome, _ := setUserDirs(t)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := listener.Addr().String()
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	want := errors.New("launch failed")
+	oldLaunch := launchFirefox
+	t.Cleanup(func() { launchFirefox = oldLaunch })
+	var received firefox.Config
+	launchFirefox = func(config firefox.Config) error {
+		received = config
+		return want
+	}
+	var stderr bytes.Buffer
+	code := run([]string{"firefox", "-listen", address, "https://example.test/"}, &bytes.Buffer{}, &stderr)
+	if code != 1 || !strings.Contains(stderr.String(), want.Error()) {
+		t.Fatalf("exit code = %d, stderr = %q", code, stderr.String())
+	}
+	if received.ProxyAddress != address || received.URL != "https://example.test/" {
+		t.Fatalf("Firefox config = %+v", received)
+	}
+	wantProfile := filepath.Join(configHome, "lemmingd", "firefox-profile")
+	if received.Profile != wantProfile {
+		t.Fatalf("profile = %q, want %q", received.Profile, wantProfile)
+	}
+	rebound, err := net.Listen("tcp", address)
+	if err != nil {
+		t.Fatalf("proxy listener was not released: %v", err)
+	}
+	_ = rebound.Close()
 }
 
 func TestRunReportsConfigurationCAAndRouterErrors(t *testing.T) {

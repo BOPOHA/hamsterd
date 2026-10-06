@@ -26,9 +26,11 @@ Start `lemmingd` once so it creates its configuration and CA:
 lemmingd
 ```
 
-Stop it with `Ctrl+C`. Then install its CA in a dedicated development browser
-and configure that browser to use `127.0.0.1:18080` for both HTTP and HTTPS.
-See [Installing the local CA](ca-installation.md) for the browser steps.
+Stop it with `Ctrl+C`. You can either install its CA in a dedicated development
+browser and configure that browser to use `127.0.0.1:18080` for both HTTP and
+HTTPS, or use `lemmingd firefox URL` after step 3 to create an isolated,
+preconfigured Firefox profile. The launcher requires NSS `certutil`; see
+[Installing the local CA](ca-installation.md) for both approaches.
 
 ## 1. Download and change the theme
 
@@ -97,17 +99,20 @@ printf '%s\n' \
   > "$lemming_config"
 ```
 
-Start `lemmingd` again in a third terminal:
+Start `lemmingd` again in a third terminal. If NSS `certutil` is installed, it
+can also launch the isolated, preconfigured browser for this example:
 
 ```sh
 lemmingd
+# or: lemmingd firefox https://jekyllrb.com/
 ```
 
 ## 4. View the result
 
 Open `https://jekyllrb.com/` in the configured browser and perform a hard
-reload (`Ctrl+Shift+R`). The page and its content still come from the real
-Jekyll site, while the dark purple theme comes from your local stylesheet.
+reload (`Ctrl+Shift+R`). The `lemmingd firefox` form already opens it. The page
+and its content still come from the real Jekyll site, while the dark purple
+theme comes from your local stylesheet.
 
 The `lemmingd` terminal should show the intercepted asset:
 

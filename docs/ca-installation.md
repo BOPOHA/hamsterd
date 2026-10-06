@@ -70,8 +70,17 @@ Firefox can keep trust local to one browser profile:
 6. Allow it to identify websites, then confirm.
 7. Restart Firefox.
 
-To remove it later, return to **Authorities**, select `lemmingd local CA` or
-`hamsterd local CA`, and choose **Delete or Distrust**.
+Alternatively, `lemmingd firefox URL` creates and uses a separate
+lemmingd-managed Firefox profile, configures its proxy, and imports the public
+CA automatically. It requires Mozilla NSS `certutil`; see [Launch an isolated
+Firefox profile](lemmingd.md#launch-an-isolated-firefox-profile).
+
+For a manually configured profile, remove the CA later by returning to
+**Authorities**, selecting `lemmingd local CA` or `hamsterd local CA`, and
+choosing **Delete or Distrust**. The managed launcher imports its CA again on
+every start; to remove its trust permanently, close Firefox and lemmingd and
+delete the dedicated `firefox-profile` directory as described in the linked
+guide.
 
 Firefox installations managed by an organization or distribution may use the
 operating-system trust store instead. `about:policies` shows active enterprise
@@ -270,6 +279,10 @@ its private key can impersonate HTTPS sites to clients that trust the CA.
 - Keep the proxies bound to loopback unless remote access is deliberately
   protected by separate network controls.
 - Remove the CA from every browser and system trust store when finished.
+- The lemmingd-managed Firefox profile keeps its CA trust, cookies, history,
+  sessions, and saved logins in its own `firefox-profile` directory. Close its
+  Firefox window and lemmingd before deleting that directory when it is no
+  longer needed.
 - Deleting `ca.crt` from disk does not remove previously installed trust.
 - If `ca.key` may have leaked, remove its certificate from every trust store,
   delete both local CA files, and restart the proxy to generate a new pair.

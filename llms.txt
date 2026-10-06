@@ -10,7 +10,7 @@ License: MIT
 - [Project overview](https://github.com/BOPOHA/hamsterd/blob/main/README.md): installation, building, security, and development commands
 - [hamsterd guide](https://github.com/BOPOHA/hamsterd/blob/main/docs/hamsterd.md): cache behavior, configuration, supported HTTP semantics, and troubleshooting
 - [Terragrunt cache example](https://github.com/BOPOHA/hamsterd/blob/main/docs/hamsterd.howto.md): copy-paste workflow for caching Terraform Registry and HashiCorp release downloads
-- [lemmingd guide](https://github.com/BOPOHA/hamsterd/blob/main/docs/lemmingd.md): route selected domains and paths to local development servers
+- [lemmingd guide](https://github.com/BOPOHA/hamsterd/blob/main/docs/lemmingd.md): route selected domains and paths to local or alternate origins, and launch an isolated configured Firefox profile
 - [lemmingd static-site example](https://github.com/BOPOHA/hamsterd/blob/main/docs/lemmingd.howto.md): replace remote site assets with locally modified content
 - [CA installation](https://github.com/BOPOHA/hamsterd/blob/main/docs/ca-installation.md): trust the generated development CA in browsers and command-line clients
 - [Security policy](https://github.com/BOPOHA/hamsterd/blob/main/SECURITY.md): threat model and vulnerability reporting
@@ -22,6 +22,7 @@ License: MIT
 - Each program creates its own local certificate authority; private CA keys must never be published.
 - hamsterd caches only eligible complete public GET responses and supports selective exact-host interception.
 - lemmingd intercepts only configured domains and routes matching path prefixes to configured local or explicitly allowed remote targets.
+- `lemmingd firefox URL` starts the proxy and launches a dedicated Firefox profile with profile-local proxy settings and CA trust; it requires Mozilla NSS `certutil` and does not change the default Firefox profile.
 - Configuration format version is 1. The primary implementation language is Go.
 - Build and verify with `make build`, `make test`, and `make vet`.
 
@@ -32,6 +33,7 @@ License: MIT
 - On a controlled development LAN, let several authorized machines reuse one hamsterd cache instead of maintaining a separate tool-specific cache on each machine. This requires explicit remote-client configuration, firewall controls, and CA distribution; hamsterd has no client authentication.
 - Use lemmingd to serve a local `npm run dev` frontend and assets under a real QA or production-like HTTPS hostname while `/api/` continues to use the remote stack. Changes appear on refresh without a build or deployment.
 - Preview a hosting migration before DNS cutover by routing one proxied browser to the candidate origin while a direct browser shows the current DNS-selected site at the same public URL.
+- Launch an isolated, preconfigured Firefox session with `lemmingd firefox URL` for side-by-side direct and proxied browser testing.
 - Reverse a lemmingd rule to exercise a local API implementation through the already-deployed frontend.
 - Use separate browser-visible frontend and API hostnames to test a local API's real CORS behavior, or preserve one hostname to test same-origin cookies, redirects, OAuth callbacks, service workers, and Secure/SameSite behavior.
 - Route selected assets or API calls to a local replacement, mock, or failure simulator while the rest of the application remains remote.

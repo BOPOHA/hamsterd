@@ -3,6 +3,18 @@
 All notable changes will be documented in this file. Releases follow semantic
 versioning while the project remains below version 1.0.
 
+## [0.1.3] - 2026-10-07
+
+- Add `lemmingd firefox URL` to launch an isolated Firefox profile configured
+  with lemmingd's proxy and public CA.
+- Keep Firefox's default profile and profile registry unchanged, and require
+  NSS `certutil` rather than weakening HTTPS verification.
+- Recommend `nss-tools` in the lemmingd RPM for its optional Firefox launcher.
+- Track Firefox exits to remove its launcher lease, serialize managed-profile
+  preparation, safely replace stale runtime leases, reject active Firefox
+  profile locks, stop Firefox when post-launch setup fails, and include NSS
+  command diagnostics when setup fails.
+
 ## [0.1.2] - 2026-10-06
 
 - Preserve the browser-visible `Host` header and ordinary request headers when

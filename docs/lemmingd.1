@@ -1,9 +1,12 @@
-.TH LEMMINGD 1 "October 2026" "lemmingd 0.1.2" "User Commands"
+.TH LEMMINGD 1 "October 2026" "lemmingd 0.1.3" "User Commands"
 .SH NAME
 lemmingd \- selective local-development HTTP and HTTPS proxy
 .SH SYNOPSIS
 .B lemmingd
 .RI [ options ]
+.br
+.B lemmingd firefox
+.RI [ options ] " URL"
 .SH DESCRIPTION
 .B lemmingd
 routes configured domain and path combinations to local development servers or
@@ -12,8 +15,27 @@ proxied browser without changing DNS for a direct browser. It intercepts HTTPS
 only for configured domains; all other CONNECT traffic is tunneled unchanged.
 Exclusion prefixes take precedence over inclusion prefixes.
 .PP
-A unique local certificate authority is generated on first start. The CA is
-not trusted or installed automatically.
+A unique local certificate authority is generated on first start. Normal server
+mode does not trust or install it automatically.
+.PP
+The
+.B firefox
+command creates or reuses an isolated Firefox profile beside lemmingd's
+configuration, configures it to use lemmingd, imports the public CA with
+.BR certutil (1),
+and launches Firefox with that profile. It does not modify Firefox's default
+profile or its profile registry. Firefox is found from PATH, the standard
+macOS application locations, or common Windows installation locations. The NSS
+tools package is required. On Windows, pass the NSS executable with
+.B \-nss-certutil
+because the built-in Windows certutil program is incompatible.
+.PP
+Closing Firefox does not stop lemmingd. Lemmingd does not explicitly close
+Firefox when it stops, though terminal-delivered signals can also reach
+Firefox. The managed profile retains browser data and remains configured for
+the proxy between launches. Lemmingd refuses to modify the profile while
+Firefox holds its profile lock. To use the combined command again, close
+Firefox and stop any existing lemmingd process first.
 .SH OPTIONS
 .TP
 .BI \-config " path"
@@ -28,6 +50,17 @@ Use the specified CA private-key file.
 .BI \-listen " host:port"
 Override the configured listening address.
 .TP
+.BI \-firefox-bin " path"
+Firefox executable used by the
+.B firefox
+command.
+.TP
+.BI \-nss-certutil " path"
+NSS certutil executable used by the
+.B firefox
+command. This is required on Windows unless an NSS certutil is available as
+.BR nss-certutil .
+.TP
 .B \-version
 Print version information and exit.
 .SH FILES
@@ -41,10 +74,20 @@ Generated public CA certificate.
 .TP
 .I $XDG_CONFIG_HOME/lemmingd/ca.key
 Generated private CA key. Do not share this file.
+.TP
+.I $XDG_CONFIG_HOME/lemmingd/firefox-profile/
+Dedicated Firefox profile created by the
+.B firefox
+command. It contains profile-local CA trust, cookies, history, sessions, and
+other Firefox data. Close Firefox before removing it.
 .SH SECURITY
 The default listener is 127.0.0.1:18080. Remote clients and non-loopback
 redirect targets each require an explicit opt-in. Apply separate network access
 controls before enabling either option.
+.PP
+The managed Firefox profile is private to the operating-system user but can
+contain authenticated browsing state. Remove it when that state is no longer
+needed.
 .SH SEE ALSO
 .BR hamsterd (1),
 the project README, and SECURITY.md.
