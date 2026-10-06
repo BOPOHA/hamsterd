@@ -128,7 +128,7 @@ func TestPrepareAndLaunchCreatesIsolatedProfile(t *testing.T) {
 	if state, pid, _, err := parseLease(lease); err != nil || state != "running" || pid != 4242 {
 		t.Fatalf("lease = %q", lease)
 	}
-	stopFakeFirefox(runner)
+	stopFakeFirefox(t, runner, profile)
 }
 
 func TestPrepareAndLaunchRejectsConcurrentPreparation(t *testing.T) {
@@ -281,7 +281,7 @@ func TestPrepareAndLaunchReusesCertificateDatabase(t *testing.T) {
 	if len(runner.runs) != 2 || runner.runs[0].args[0] != "-D" || runner.runs[1].args[0] != "-A" {
 		t.Fatalf("certificate commands = %#v", runner.runs)
 	}
-	stopFakeFirefox(runner)
+	stopFakeFirefox(t, runner, profile)
 }
 
 func TestPrepareAndLaunchRejectsFirefoxThatExitsDuringStartup(t *testing.T) {
@@ -330,7 +330,7 @@ func TestPrepareAndLaunchWaitsForNativeFirefoxLock(t *testing.T) {
 	if err := <-result; err != nil {
 		t.Fatal(err)
 	}
-	stopFakeFirefox(runner)
+	stopFakeFirefox(t, runner, profile)
 }
 
 func TestPrepareAndLaunchRejectsNativeFirefoxLock(t *testing.T) {
@@ -374,16 +374,7 @@ func TestPrepareAndLaunchRemovesLeaseWhenFirefoxExits(t *testing.T) {
 	}, runner); err != nil {
 		t.Fatal(err)
 	}
-	stopFakeFirefox(runner)
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		_, err := os.Stat(filepath.Join(profile, launcherLockName))
-		if errors.Is(err, os.ErrNotExist) {
-			return
-		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatal("lease was not removed when Firefox exited")
+	stopFakeFirefox(t, runner, profile)
 }
 
 func TestPrepareAndLaunchRemovesPreparationLock(t *testing.T) {
@@ -402,7 +393,7 @@ func TestPrepareAndLaunchRemovesPreparationLock(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(profile, preparationLockName)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("preparation lock was retained: %v", err)
 	}
-	stopFakeFirefox(runner)
+	stopFakeFirefox(t, runner, profile)
 }
 
 func TestPrepareAndLaunchStopsFirefoxWhenPostStartSetupFails(t *testing.T) {
@@ -441,8 +432,25 @@ func newRunningRunner() *fakeRunner {
 	}
 }
 
-func stopFakeFirefox(runner *fakeRunner) {
+func stopFakeFirefox(t *testing.T, runner *fakeRunner, profile string) {
+	t.Helper()
 	runner.startExit <- nil
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		_, leaseErr := os.Stat(filepath.Join(profile, launcherLockName))
+		_, preparationErr := os.Stat(filepath.Join(profile, preparationLockName))
+		if errors.Is(leaseErr, os.ErrNotExist) && errors.Is(preparationErr, os.ErrNotExist) {
+			return
+		}
+		if leaseErr != nil && !errors.Is(leaseErr, os.ErrNotExist) {
+			t.Fatalf("inspect Firefox lease during shutdown: %v", leaseErr)
+		}
+		if preparationErr != nil && !errors.Is(preparationErr, os.ErrNotExist) {
+			t.Fatalf("inspect Firefox preparation lock during shutdown: %v", preparationErr)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("Firefox lease cleanup did not finish")
 }
 
 func TestPrepareAndLaunchReportsCertutilOutputAndReleasesLease(t *testing.T) {
