@@ -101,8 +101,54 @@ func TestRouterUsesRequestHostFallbackAndPreservesQuery(t *testing.T) {
 	if got.URL.String() != "http://127.0.0.1:8000/assets/app.js?v=2" {
 		t.Fatalf("rewritten URL = %q", got.URL)
 	}
-	if got.Host != "127.0.0.1:8000" {
+	if got.Host != "APP.EXAMPLE:443" {
 		t.Fatalf("rewritten Host = %q", got.Host)
+	}
+}
+
+func TestRouterPreservesBrowserHostAndHeadersForTarget(t *testing.T) {
+	router, err := New([]config.RedirectRule{{
+		Target: "127.0.0.1:8000", Domains: []string{"app.example"}, Include: []string{"/"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := http.NewRequest(http.MethodGet, "https://app.example/assets/app.js", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Origin", "https://app.example")
+	request.Header.Set("X-Request-ID", "request-123")
+
+	got, changed := router.Rewrite(request)
+	if !changed {
+		t.Fatal("request was not rewritten")
+	}
+	if got.URL.Host != "127.0.0.1:8000" {
+		t.Fatalf("target = %q", got.URL.Host)
+	}
+	if got.Host != "app.example" {
+		t.Fatalf("Host = %q, want browser-visible host", got.Host)
+	}
+	if got.Header.Get("Origin") != "https://app.example" || got.Header.Get("X-Request-ID") != "request-123" {
+		t.Fatalf("headers were not preserved: %v", got.Header)
+	}
+}
+
+func TestRouterUsesHTTPSForPort443Target(t *testing.T) {
+	router, err := New([]config.RedirectRule{{
+		Target: "35.209.130.222:443", Domains: []string{"uprightpose.com"}, Include: []string{"/"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, _ := http.NewRequest(http.MethodGet, "https://uprightpose.com/", nil)
+	got, changed := router.Rewrite(request)
+	if !changed || got.URL.String() != "https://35.209.130.222:443/" {
+		t.Fatalf("rewritten request = %q, changed = %t", got.URL, changed)
+	}
+	if got.Host != "uprightpose.com" {
+		t.Fatalf("Host = %q", got.Host)
 	}
 }
 

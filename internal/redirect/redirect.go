@@ -50,10 +50,23 @@ func (r *Router) Rewrite(request *http.Request) (*http.Request, bool) {
 	clone := request.Clone(request.Context())
 	urlCopy := *request.URL
 	clone.URL = &urlCopy
-	clone.URL.Scheme = "http"
+	clone.URL.Scheme = targetScheme(rule.Target)
 	clone.URL.Host = rule.Target
-	clone.Host = rule.Target
+	// URL.Host controls where the transport connects. Host controls the HTTP
+	// Host header, which must remain the browser-visible domain so a local
+	// target can select the intended virtual host.
+	if clone.Host == "" {
+		clone.Host = request.URL.Host
+	}
 	return clone, true
+}
+
+func targetScheme(target string) string {
+	_, port, err := net.SplitHostPort(target)
+	if err == nil && port == "443" {
+		return "https"
+	}
+	return "http"
 }
 
 func matches(path string, rule Rule) bool {

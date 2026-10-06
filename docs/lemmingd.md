@@ -1,12 +1,12 @@
 # Using lemmingd
 
-**Run one part of a real site locally, under its real HTTPS URL, without
-deploying it.**
+**Route part of a real site to a development server or alternate host under
+its real HTTPS URL, without deploying it or changing DNS.**
 
 `lemmingd` lets a browser keep using a real HTTPS URL while selected requests
-are served by a development server on your machine. The browser still sees
-`https://app.example.com`; `lemmingd` decides which requests go to the real
-server and which go to `http://127.0.0.1:<port>`.
+are served by a development server on your machine or an alternate remote
+origin. The browser still sees `https://app.example.com`; `lemmingd` decides
+which requests go to the current site and which go to the configured target.
 
 This is useful when a frontend engineer needs real QA or production-like APIs,
 cookies, redirects, and HTTPS without running the complete backend locally. A
@@ -107,8 +107,8 @@ from a real development setup and demonstrates more of the available options:
 - separate local targets for an asset server and a frontend dev server; and
 - explicit remote-client and remote-target safety settings.
 
-All example hostnames use the reserved `example.com` domain. Replace them with
-domains you are authorized to test.
+All example hostnames use reserved `example.com` or `.test` names. Replace them
+with domains you are authorized to test.
 
 For a copy-paste walkthrough that replaces the theme of a real static site
 while leaving its HTML remote, see
@@ -127,10 +127,10 @@ Modern frontend dev servers often need a little more than the first page:
 - Configure hot-module replacement to use the browser-visible hostname and
   secure WebSockets, for example `wss://app.qa.example.com`. Its WebSocket path
   must also match an included path.
-- The local server receives the rewritten target as its `Host`, such as
-  `127.0.0.1:5173`, while browser headers such as `Origin` and `Referer` can
-  contain the real HTTPS hostname. Account for that in dev-server host and
-  origin checks.
+- The local server receives the browser-visible hostname in `Host`, while the
+  connection itself goes to the configured target. Browser headers such as
+  `Origin` and `Referer` can likewise contain the real HTTPS hostname. Account
+  for that in dev-server host and origin checks.
 
 If the page loads but hot reload or an asset does not, inspect the browser's
 Network and Console panels and compare the failing hostname and path with the
@@ -191,7 +191,56 @@ The deployed UI stays real, but calls below `/api/` reach the backend being
 developed locally. This is handy for checking a response-shape change or a new
 endpoint against the exact frontend version already deployed.
 
-### 3. Develop and test CORS locally under realistic HTTPS origins
+### 3. Preview a hosting migration before changing DNS
+
+Route the public site hostname to the candidate hosting origin:
+
+```json
+{
+  "version": 1,
+  "listen": "127.0.0.1:18080",
+  "allow_remote_targets": true,
+  "rules": [
+    {
+      "target": "new-origin.example.net:443",
+      "domains": ["www.example.com"],
+      "include_paths": ["/"],
+      "exclude_paths": []
+    }
+  ]
+}
+```
+
+See [the ready-to-edit migration example](../examples/lemmingd-hosting-migration.json).
+
+Configure one browser or browser profile to use lemmingd and leave a second
+browser direct:
+
+| Client | Opens | Content comes from |
+| --- | --- | --- |
+| Proxied browser | `https://www.example.com/` | Candidate host at `new-origin.example.net:443` |
+| Direct browser | `https://www.example.com/` | Current host selected by public DNS |
+
+Both browsers use the same public URL, so links, cookie behavior, JavaScript,
+responsive layouts, and multi-page navigation can be compared in real time. No
+DNS update or `/etc/hosts` change is needed, and only the browser configured to
+use lemmingd is affected. This complements `curl --resolve`, which is excellent
+for individual HTTP checks but does not provide a persistent interactive
+browser session.
+
+For an HTTPS target, use a target hostname whose certificate is valid for that
+hostname; lemmingd uses it for TLS SNI and certificate verification. It sends
+the original browser-visible hostname, `www.example.com` in this example, as
+the HTTP `Host` header so the candidate server can select the site being
+migrated. The candidate hosting configuration must accept that `Host` value.
+
+Test logins, forms, redirects, asset hostnames, WebSockets, and service workers
+explicitly. An absolute redirect to the target's internal hostname can leave
+the public URL, and assets on additional domains need their own rules. Requests
+carry real cookies and authorization data, and writes reach the selected
+backend, so use test accounts and a non-production candidate when possible.
+
+### 4. Develop and test CORS locally under realistic HTTPS origins
 
 `localhost` ports alone do not reproduce the hostnames, HTTPS scheme, or
 credentials mode used after deployment. Give the local frontend and API their
@@ -228,7 +277,7 @@ If both frontend and API use `https://example.com` with paths such as `/` and
 `/api/`, they are the same origin. That setup is useful, but it does **not**
 test CORS.
 
-### 4. Replace only selected static assets
+### 5. Replace only selected static assets
 
 Keep the complete remote application but serve a CSS, JavaScript, image, or
 localization subtree locally:
@@ -252,7 +301,7 @@ This is a small, low-disruption way to verify a CSS, JavaScript, image, font,
 translation, or theme fix against the real page. It is also useful when the
 normal asset pipeline requires a full build and deployment for each change.
 
-### 5. Reproduce HTTPS-only browser behavior
+### 6. Reproduce HTTPS-only browser behavior
 
 Serve the local application through a deployment-like HTTPS origin to inspect
 Secure cookies, SameSite behavior, service workers, OAuth redirects, or code
@@ -263,7 +312,7 @@ forwards selected paths to the local HTTP server.
 This reproduces the browser-visible scheme and hostname, but it does not
 reproduce every property of the deployed edge, CDN, or production TLS setup.
 
-### 6. Route selected calls to a local mock or failure simulator
+### 7. Route selected calls to a local mock or failure simulator
 
 Point an API path at a local mock server while leaving the UI and every other
 route remote. The mock can return rare error codes, slow responses, empty
@@ -271,7 +320,7 @@ results, expired data, or malformed payloads that are difficult or unsafe to
 create in a shared environment. This is useful for error-state development and
 deterministic browser tests.
 
-### 7. Run browser, visual, and accessibility tests with realistic data
+### 8. Run browser, visual, and accessibility tests with realistic data
 
 An automated browser configured to use `lemmingd` can exercise a local
 frontend under the real hostname while its data continues to come from a QA or
@@ -284,7 +333,8 @@ data controlled: remote API actions are not sandboxed by `lemmingd`.
 Each domain can appear in only one rule. For a configured domain, routing is:
 
 1. If the path starts with an `exclude_paths` prefix, use the real server.
-2. Otherwise, if it starts with an `include_paths` prefix, use `http://target`.
+2. Otherwise, if it starts with an `include_paths` prefix, use the configured
+   target.
 3. Otherwise, use the real server.
 
 Domains are exact hostnames, matched case-insensitively; wildcard domains are
@@ -293,9 +343,14 @@ domain is intercepted so that `lemmingd` can inspect its path, including paths
 that ultimately continue to the real server. HTTPS domains with no rule are
 tunneled without interception.
 
-Targets must be written as `host:port`. They use HTTP, and loopback targets are
-required by default. `allow_remote_targets` permits non-loopback targets, but
-should be enabled only when that additional access is intentional.
+Targets must be written as `host:port`. Targets use HTTP by default; a target
+on port `443` uses HTTPS. Use a hostname that matches the target certificate:
+for example, use `giow1091.siteground.us:443` rather than its IP address when
+that is the certificate name. Lemmingd still sends the browser-visible hostname
+in the HTTP `Host` header, so the target can select the intended virtual host.
+Loopback targets are required by default. `allow_remote_targets` permits
+non-loopback targets, but should be enabled only when that additional access is
+intentional.
 
 ## Multiple applications or dev servers
 
@@ -343,6 +398,10 @@ Several domains can share one target by listing them in the same rule.
 - **The dev server is on another machine or container address:** loopback is
   required unless `allow_remote_targets` is set to `true`. Consider port
   forwarding it to loopback instead.
+- **A migration target fails TLS validation:** use a target hostname covered by
+  its certificate instead of the target IP address.
+- **A migration target serves its default site:** configure the candidate host
+  to accept the original public hostname sent in the HTTP `Host` header.
 - **A third-party domain fails only with command-line tests:** unconfigured
   domains are tunneled and use their public CA. A `curl --cacert` file that
   contains only the lemmingd CA is intended for configured/intercepted domains.

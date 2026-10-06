@@ -2,7 +2,7 @@
 %global debug_package %{nil}
 
 Name:           hamsterd
-Version:        0.1.1
+Version:        0.1.2
 Release:        1%{?dist}
 Summary:        Local caching HTTP and HTTPS development proxy
 
@@ -34,8 +34,8 @@ Provides:       bundled(golang(golang.org/x/text)) = 0.34.0
 
 %description -n lemmingd
 lemmingd intercepts configured development domains and routes selected URL paths
-to local HTTP servers. Other domains are passed through without TLS
-interception.
+to local HTTP servers or explicitly allowed remote origins. Other domains are
+passed through without TLS interception.
 
 %prep
 %setup -T -b 0 -q -n hamsterd
@@ -90,6 +90,10 @@ done
 %{_mandir}/man1/lemmingd.1*
 
 %changelog
+* Tue Oct 06 2026 Anatolii Vorona <vorona.tolik@gmail.com> - 0.1.2-1
+- Preserve the browser-visible Host header when lemmingd routes a request
+- Support HTTPS targets on port 443 for hosting-migration previews
+
 * Mon Oct 05 2026 Anatolii Vorona <vorona.tolik@gmail.com> - 0.1.1-1
 - Add selective domain interception for hamsterd and tunnel other HTTPS hosts
 - Cache supported response variants and honor stale-while-revalidate

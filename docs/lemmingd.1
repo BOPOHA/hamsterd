@@ -1,4 +1,4 @@
-.TH LEMMINGD 1 "October 2026" "lemmingd 0.1.1" "User Commands"
+.TH LEMMINGD 1 "October 2026" "lemmingd 0.1.2" "User Commands"
 .SH NAME
 lemmingd \- selective local-development HTTP and HTTPS proxy
 .SH SYNOPSIS
@@ -6,9 +6,11 @@ lemmingd \- selective local-development HTTP and HTTPS proxy
 .RI [ options ]
 .SH DESCRIPTION
 .B lemmingd
-routes configured domain and path combinations to local HTTP servers. It
-intercepts HTTPS only for configured domains; all other CONNECT traffic is
-tunneled unchanged. Exclusion prefixes take precedence over inclusion prefixes.
+routes configured domain and path combinations to local development servers or
+explicitly allowed remote origins. It can preview a hosting migration in one
+proxied browser without changing DNS for a direct browser. It intercepts HTTPS
+only for configured domains; all other CONNECT traffic is tunneled unchanged.
+Exclusion prefixes take precedence over inclusion prefixes.
 .PP
 A unique local certificate authority is generated on first start. The CA is
 not trusted or installed automatically.

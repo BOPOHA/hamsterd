@@ -2,8 +2,8 @@
 
 This repository contains two focused HTTP/HTTPS development proxies:
 `hamsterd` downloads an eligible public artifact once and reuses it across
-builds or development machines; `lemmingd` runs one part of a real site
-locally, under its real HTTPS URL, without waiting for a deployment.
+builds or development machines; `lemmingd` routes selected parts of a real
+site to a local server or alternate host under the site's real HTTPS URL.
 
 They share secure proxy, configuration, and certificate-authority
 infrastructure, but they have different jobs:
@@ -11,7 +11,7 @@ infrastructure, but they have different jobs:
 | Command | Purpose | HTTPS behavior |
 | --- | --- | --- |
 | `hamsterd` | Download once; reuse across builds, ephemeral environments, or a controlled development network. | Intercepts all HTTPS hosts by default, or only an optional exact-host allowlist. |
-| `lemmingd` | Replace selected routes of a real site with a local frontend, API, mock, or asset server. | Intercepts configured domains only; other CONNECT traffic is tunneled unchanged. |
+| `lemmingd` | Replace selected routes of a real site with a local frontend, API, mock, asset server, or alternate hosting origin. | Intercepts configured domains only; other CONNECT traffic is tunneled unchanged. |
 
 Both commands listen on loopback by default. They generate a unique local CA on
 first start and never install it into a trust store automatically.
@@ -58,12 +58,23 @@ the local API's CORS headers.
 Use QA or staging whenever possible. If the remote routes point to production,
 its data and side effects remain real.
 
+### Preview a hosting migration before changing DNS
+
+`lemmingd` can also route a site's real hostname to a candidate hosting origin.
+Configure one browser or browser profile to use the proxy and leave another
+browser direct. The proxied browser shows the candidate host while the direct
+browser follows public DNS to the current host, so a developer can compare both
+versions at the same URL in real time without editing `/etc/hosts` or changing
+DNS. This complements one-off checks such as `curl --resolve` with a complete,
+interactive browser session.
+
 ## User guides
 
 - [AI/LLM project index](llms.txt) provides a compact map of the project and
   its authoritative documentation.
 - [Use lemmingd](docs/lemmingd.md) to combine a local frontend or backend with
-  selected routes from a real QA, staging, or production-like site.
+  selected routes from a real site, or preview an alternate hosting origin
+  before changing DNS.
 - [Use hamsterd](docs/hamsterd.md) to cache eligible public development
   downloads.
 - [Install the local CA](docs/ca-installation.md) in Firefox,
@@ -134,15 +145,17 @@ configuration, and troubleshooting are in
 
 ## lemmingd
 
-`lemmingd` combines selected local frontend, backend, mock, or asset routes
-with a real remote application. Start it once to create its configuration:
+`lemmingd` combines selected local frontend, backend, mock, asset, or alternate
+hosting routes with a real remote application. Start it once to create its
+configuration:
 
 ```sh
 ./bin/lemmingd
 ```
 
-The complete local-frontend/remote-API walkthrough, CORS and HTTPS examples,
-routing semantics, dev-server checklist, and troubleshooting are in
+The complete local-frontend/remote-API walkthrough, hosting-migration preview,
+CORS and HTTPS examples, routing semantics, dev-server checklist, and
+troubleshooting are in
 [Using lemmingd](docs/lemmingd.md). See also the
 [multi-rule example configuration](examples/lemmingd.json), adapted and
 anonymized from a real development setup.

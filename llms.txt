@@ -1,6 +1,6 @@
 # hamsterd and lemmingd
 
-> Two focused HTTP/HTTPS development proxies written in Go. hamsterd downloads eligible public artifacts once and reuses them across builds or development machines. lemmingd runs selected routes of a real site locally, under the real HTTPS URL, without a deployment.
+> Two focused HTTP/HTTPS development proxies written in Go. hamsterd downloads eligible public artifacts once and reuses them across builds or development machines. lemmingd routes selected paths of a real site to local services or alternate hosting origins under the real HTTPS URL.
 
 Project: https://github.com/BOPOHA/hamsterd
 License: MIT
@@ -21,7 +21,7 @@ License: MIT
 - Both programs are forward proxies and listen only on loopback by default.
 - Each program creates its own local certificate authority; private CA keys must never be published.
 - hamsterd caches only eligible complete public GET responses and supports selective exact-host interception.
-- lemmingd intercepts only configured domains and routes matching path prefixes to configured local targets.
+- lemmingd intercepts only configured domains and routes matching path prefixes to configured local or explicitly allowed remote targets.
 - Configuration format version is 1. The primary implementation language is Go.
 - Build and verify with `make build`, `make test`, and `make vet`.
 
@@ -31,6 +31,7 @@ License: MIT
 - Keep hamsterd outside ephemeral CI runners, containers, or development VMs so new environments can reuse earlier downloads.
 - On a controlled development LAN, let several authorized machines reuse one hamsterd cache instead of maintaining a separate tool-specific cache on each machine. This requires explicit remote-client configuration, firewall controls, and CA distribution; hamsterd has no client authentication.
 - Use lemmingd to serve a local `npm run dev` frontend and assets under a real QA or production-like HTTPS hostname while `/api/` continues to use the remote stack. Changes appear on refresh without a build or deployment.
+- Preview a hosting migration before DNS cutover by routing one proxied browser to the candidate origin while a direct browser shows the current DNS-selected site at the same public URL.
 - Reverse a lemmingd rule to exercise a local API implementation through the already-deployed frontend.
 - Use separate browser-visible frontend and API hostnames to test a local API's real CORS behavior, or preserve one hostname to test same-origin cookies, redirects, OAuth callbacks, service workers, and Secure/SameSite behavior.
 - Route selected assets or API calls to a local replacement, mock, or failure simulator while the rest of the application remains remote.

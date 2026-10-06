@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "listen": "127.0.0.1:18080",
+  "allow_remote_clients": false,
+  "allow_remote_targets": true,
+  "rules": [
+    {
+      "target": "new-hosting-endpoint.com:443",
+      "domains": [
+        "foo-bar-example.test",
+        "www.foo-bar-example.test"
+      ],
+      "include_paths": [
+        "/"
+      ],
+      "exclude_paths": []
+    }
+  ]
+}
