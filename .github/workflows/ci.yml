@@ -40,6 +40,11 @@ jobs:
           GOTOOLCHAIN: auto
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
+      - name: Lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.1.0
+
   cross-build:
     strategy:
       matrix:
