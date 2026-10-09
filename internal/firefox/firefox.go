@@ -229,6 +229,10 @@ func validate(config Config) error {
 	} else if info.IsDir() {
 		return errors.New("CA certificate is a directory")
 	}
+	// The host from ProxyAddress is written into Firefox's user.js via
+	// strconv.Quote. Go and JavaScript quoting are compatible for IP addresses
+	// and plain hostnames; writePreferences normalises unspecified addresses to
+	// 127.0.0.1 / ::1 before quoting, so exotic characters cannot appear here.
 	if _, _, err := net.SplitHostPort(config.ProxyAddress); err != nil {
 		return fmt.Errorf("invalid proxy address %q: %w", config.ProxyAddress, err)
 	}

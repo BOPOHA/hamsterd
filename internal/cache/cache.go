@@ -460,10 +460,16 @@ func (s *store) commit(key string, temporary *os.File, meta metadata) error {
 		_ = os.Remove(bodyPath)
 		return err
 	}
+	// evict acquires its own lock; commit intentionally does not hold the lock
+	// here so that concurrent loads can proceed while eviction scans the dir.
 	s.evict()
 	return nil
 }
 
+// replace renames source to destination atomically on the same filesystem.
+// The fallback (remove + rename) exists for cross-device moves, but the cache
+// directory keeps both temp files and final files, so source and destination
+// are always on the same filesystem and the first Rename almost always succeeds.
 func replace(source, destination string) error {
 	if err := os.Rename(source, destination); err == nil {
 		return nil
