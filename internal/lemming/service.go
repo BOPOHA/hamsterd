@@ -54,6 +54,10 @@ type Service struct {
 	base   []config.RedirectRule
 	auto   []config.RedirectRule
 	router atomic.Pointer[redirect.Router]
+	// autoErr explains why rules.auto.json was not loaded. While it is set,
+	// the control API refuses rule changes so that the file is not
+	// overwritten.
+	autoErr error
 
 	recentMu sync.Mutex
 	recent   []RequestView
@@ -61,13 +65,10 @@ type Service struct {
 }
 
 // New loads the auto rules next to configPath and builds the router from
-// the configuration rules followed by the auto rules.
+// the configuration rules followed by the auto rules. Invalid auto rules do
+// not prevent startup: they are skipped and reported by AutoRulesError.
 func New(configPath string, cfg config.Config, info Info) (*Service, error) {
 	autoPath := config.AutoRulesPath(configPath)
-	auto, err := config.LoadAutoRules(autoPath)
-	if err != nil {
-		return nil, err
-	}
 	info.ConfigFile, info.AutoRulesFile = configPath, autoPath
 	s := &Service{
 		info:         info,
@@ -77,15 +78,33 @@ func New(configPath string, cfg config.Config, info Info) (*Service, error) {
 		remoteClient: cfg.AllowRemoteClients,
 		trusted:      proxycore.NewTrustList(nil, nil),
 		base:         slices.Clone(cfg.Rules),
-		auto:         auto,
 	}
-	if err := s.apply(s.base, s.auto); err != nil {
-		if len(auto) > 0 {
-			return nil, fmt.Errorf("%s: %w", autoPath, err)
+	auto, err := config.LoadAutoRules(autoPath)
+	if err == nil {
+		var router *redirect.Router
+		if router, err = s.build(s.base, auto); err == nil {
+			s.install(router)
+			s.auto = auto
+			return s, nil
 		}
+	}
+	s.autoErr = fmt.Errorf("%s was not loaded: %w", autoPath, err)
+	router, err := s.build(s.base, nil)
+	if err != nil {
 		return nil, err
 	}
+	s.install(router)
 	return s, nil
+}
+
+// AutoRulesError reports why rules.auto.json was skipped at startup, or nil.
+func (s *Service) AutoRulesError() error {
+	return s.autoErr
+}
+
+// errAutoRulesSkipped refuses rule changes while rules.auto.json is invalid.
+func (s *Service) errAutoRulesSkipped() error {
+	return fmt.Errorf("%w; fix or remove it and restart lemmingd before changing rules", s.autoErr)
 }
 
 // Router returns the current router.
@@ -105,18 +124,23 @@ func (s *Service) AutoRuleCount() int {
 	return len(s.auto)
 }
 
-func (s *Service) apply(base, auto []config.RedirectRule) error {
+// build validates the rules and returns their router without installing it.
+func (s *Service) build(base, auto []config.RedirectRule) (*redirect.Router, error) {
 	all := append(slices.Clone(base), auto...)
 	if err := config.ValidateRules(all, s.allowRemote); err != nil {
-		return err
+		return nil, err
 	}
-	router, err := redirect.New(all)
-	if err != nil {
-		return err
+	return redirect.New(all)
+}
+
+// install switches to router. The trust list briefly holds the old and new
+// entries, so that no request is routed to a target that is not yet trusted.
+func (s *Service) install(router *redirect.Router) {
+	if old := s.router.Load(); old != nil {
+		s.trusted.Set(append(old.Targets(), router.Targets()...), append(old.Domains(), router.Domains()...))
 	}
 	s.router.Store(router)
 	s.trusted.Set(router.Targets(), router.Domains())
-	return nil
 }
 
 // RuleView is a rule as reported by the control API.
@@ -157,6 +181,9 @@ func (s *Service) Rules() []RuleView {
 func (s *Service) AddRule(rule config.RedirectRule) (RuleView, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.autoErr != nil {
+		return RuleView{}, conflictError{s.errAutoRulesSkipped()}
+	}
 	if len(s.auto) >= config.MaxAutoRules {
 		return RuleView{}, fmt.Errorf("at most %d rules can be added through the control API", config.MaxAutoRules)
 	}
@@ -171,15 +198,16 @@ func (s *Service) AddRule(rule config.RedirectRule) (RuleView, error) {
 		}
 	}
 	auto := append(slices.Clone(s.auto), rule)
-	if err := config.ValidateRules(append(slices.Clone(s.base), auto...), s.allowRemote); err != nil {
+	// Build the router before saving, so that a rule the router rejects is
+	// never stored.
+	router, err := s.build(s.base, auto)
+	if err != nil {
 		return RuleView{}, err
 	}
 	if err := config.WriteAutoRules(s.autoPath, auto); err != nil {
-		return RuleView{}, err
+		return RuleView{}, storageError{err}
 	}
-	if err := s.apply(s.base, auto); err != nil {
-		return RuleView{}, err
-	}
+	s.install(router)
 	s.auto = auto
 	return view(SourceAuto, rule), nil
 }
@@ -190,10 +218,30 @@ var ErrConfigRule = errors.New("the rule is defined in config.json; edit that fi
 // ErrNoRule reports that no rule routes the domain.
 var ErrNoRule = errors.New("no rule routes this domain")
 
+// ErrNoDomain reports a removal request without a domain.
+var ErrNoDomain = errors.New("domain is required")
+
+// storageError marks a failure to save the rules, and conflictError a change
+// refused because of the state of the rule files, as opposed to an invalid
+// request.
+type (
+	storageError  struct{ error }
+	conflictError struct{ error }
+)
+
+func (e storageError) Unwrap() error  { return e.error }
+func (e conflictError) Unwrap() error { return e.error }
+
 // RemoveRule removes the auto rule that routes domain.
 func (s *Service) RemoveRule(domain string) (RuleView, error) {
+	if strings.TrimSpace(domain) == "" {
+		return RuleView{}, ErrNoDomain
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.autoErr != nil {
+		return RuleView{}, conflictError{s.errAutoRulesSkipped()}
+	}
 	if indexOfDomain(s.base, domain) >= 0 {
 		return RuleView{}, ErrConfigRule
 	}
@@ -203,34 +251,51 @@ func (s *Service) RemoveRule(domain string) (RuleView, error) {
 	}
 	removed := s.auto[index]
 	auto := slices.Delete(slices.Clone(s.auto), index, index+1)
+	router, err := s.build(s.base, auto)
+	if err != nil {
+		return RuleView{}, err
+	}
 	if err := config.WriteAutoRules(s.autoPath, auto); err != nil {
 		return RuleView{}, err
 	}
-	if err := s.apply(s.base, auto); err != nil {
-		return RuleView{}, err
-	}
+	s.install(router)
 	s.auto = auto
 	return view(SourceAuto, removed), nil
 }
 
-// Merge moves the auto rules into config.json.
-func (s *Service) Merge() (int, error) {
+// Merge moves the auto rules into config.json. It refuses to merge if the
+// rules in config.json changed since lemmingd started, because the running
+// rules would then no longer match the file.
+func (s *Service) Merge() (config.MergeResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	merged, err := config.MergeAutoRules(s.configPath)
+	if s.autoErr != nil {
+		return config.MergeResult{}, conflictError{s.errAutoRulesSkipped()}
+	}
+	result, err := config.MergeAutoRules(s.configPath, func(onDisk config.Config) error {
+		if !slices.EqualFunc(onDisk.Rules, s.base, sameRule) {
+			return conflictError{fmt.Errorf("the rules in %s changed since lemmingd started; restart lemmingd before merging", s.configPath)}
+		}
+		return nil
+	})
 	if err != nil {
-		return 0, err
+		return config.MergeResult{}, err
 	}
 	s.base = append(s.base, s.auto...)
 	s.auto = nil
-	return merged, nil
+	return result, nil
+}
+
+func sameRule(a, b config.RedirectRule) bool {
+	return a.Target == b.Target && slices.Equal(a.Domains, b.Domains) &&
+		slices.Equal(a.Include, b.Include) && slices.Equal(a.Exclude, b.Exclude)
 }
 
 func indexOfDomain(rules []config.RedirectRule, domain string) int {
-	domain = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(domain)), ".")
+	domain = config.NormalizeDomain(domain)
 	for i, rule := range rules {
 		for _, candidate := range rule.Domains {
-			if strings.TrimSuffix(strings.ToLower(strings.TrimSpace(candidate)), ".") == domain {
+			if config.NormalizeDomain(candidate) == domain {
 				return i
 			}
 		}
@@ -253,6 +318,10 @@ func (s *Service) Route(rawURL string) (RouteView, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
 		return RouteView{}, errors.New("url must be an absolute http or https URL")
+	}
+	if parsed.Path == "" {
+		// Browsers request / for a URL without a path.
+		parsed.Path, parsed.RawPath = "/", ""
 	}
 	result := RouteView{URL: rawURL}
 	rule, intercepted, routed := s.Router().Lookup(parsed.Host, parsed.Path)
@@ -280,6 +349,9 @@ type RequestView struct {
 	Path   string    `json:"path"`
 	Target string    `json:"target,omitempty"`
 	Status int       `json:"status"`
+	// Error explains a request that got no response, such as a target that
+	// refused the connection.
+	Error string `json:"error,omitempty"`
 }
 
 // Record stores a proxied request in the recent-requests ring.
@@ -309,23 +381,28 @@ func (s *Service) Recent(limit int) []RequestView {
 // StatusView is the status endpoint response.
 type StatusView struct {
 	Info
-	AllowRemoteTargets bool `json:"allow_remote_targets"`
-	AllowRemoteClients bool `json:"allow_remote_clients"`
-	ConfigRules        int  `json:"config_rules"`
-	AutoRules          int  `json:"auto_rules"`
+	AllowRemoteTargets bool   `json:"allow_remote_targets"`
+	AllowRemoteClients bool   `json:"allow_remote_clients"`
+	ConfigRules        int    `json:"config_rules"`
+	AutoRules          int    `json:"auto_rules"`
+	AutoRulesError     string `json:"auto_rules_error,omitempty"`
 }
 
 // Status returns the status endpoint response.
 func (s *Service) Status() StatusView {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return StatusView{
+	status := StatusView{
 		Info:               s.info,
 		AllowRemoteTargets: s.allowRemote,
 		AllowRemoteClients: s.remoteClient,
 		ConfigRules:        len(s.base),
 		AutoRules:          len(s.auto),
 	}
+	if s.autoErr != nil {
+		status.AutoRulesError = s.autoErr.Error()
+	}
+	return status
 }
 
 // RuleRequest is the body of POST /v1/rules.
@@ -364,16 +441,23 @@ func (s *Service) Handler() http.Handler {
 			return
 		}
 		added, err := s.AddRule(config.RedirectRule(body))
-		if err != nil {
+		switch {
+		case errors.As(err, new(storageError)):
+			control.WriteError(writer, http.StatusInternalServerError, err)
+		case errors.As(err, new(conflictError)):
+			control.WriteError(writer, http.StatusConflict, err)
+		case err != nil:
 			control.WriteError(writer, http.StatusUnprocessableEntity, err)
-			return
+		default:
+			control.WriteJSON(writer, http.StatusCreated, added)
 		}
-		control.WriteJSON(writer, http.StatusCreated, added)
 	})
 	mux.HandleFunc("DELETE /v1/rules", func(writer http.ResponseWriter, request *http.Request) {
 		removed, err := s.RemoveRule(request.URL.Query().Get("domain"))
 		switch {
-		case errors.Is(err, ErrConfigRule):
+		case errors.Is(err, ErrNoDomain):
+			control.WriteError(writer, http.StatusBadRequest, err)
+		case errors.Is(err, ErrConfigRule), errors.As(err, new(conflictError)):
 			control.WriteError(writer, http.StatusConflict, err)
 		case errors.Is(err, ErrNoRule):
 			control.WriteError(writer, http.StatusNotFound, err)
@@ -409,16 +493,17 @@ func (s *Service) Handler() http.Handler {
 		control.WriteJSON(writer, http.StatusOK, s.Recent(limit))
 	})
 	mux.HandleFunc("POST /v1/merge", func(writer http.ResponseWriter, _ *http.Request) {
-		merged, err := s.Merge()
-		if err != nil {
+		result, err := s.Merge()
+		switch {
+		case errors.Is(err, config.ErrInvalidMerge):
 			control.WriteError(writer, http.StatusUnprocessableEntity, err)
-			return
+		case errors.As(err, new(conflictError)):
+			control.WriteError(writer, http.StatusConflict, err)
+		case err != nil:
+			control.WriteError(writer, http.StatusInternalServerError, err)
+		default:
+			control.WriteJSON(writer, http.StatusOK, MergeView{Merged: result.Merged, ConfigFile: s.configPath, Backup: result.Backup})
 		}
-		result := MergeView{Merged: merged, ConfigFile: s.configPath}
-		if merged > 0 {
-			result.Backup = s.configPath + ".bak"
-		}
-		control.WriteJSON(writer, http.StatusOK, result)
 	})
 	return mux
 }

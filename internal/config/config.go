@@ -123,7 +123,7 @@ func Default(service Service, cacheDir string) Config {
 }
 
 func LoadOrCreate(path string, service Service, cacheDir string) (Config, bool, error) {
-	data, err := os.ReadFile(path)
+	data, err := readPrivate(path)
 	if errors.Is(err, os.ErrNotExist) {
 		cfg := Default(service, cacheDir)
 		if err := writeConfig(path, cfg); err != nil {
@@ -132,9 +132,6 @@ func LoadOrCreate(path string, service Service, cacheDir string) (Config, bool, 
 		return cfg, true, nil
 	}
 	if err != nil {
-		return Config{}, false, fmt.Errorf("read config %q: %w", path, err)
-	}
-	if err := checkPrivate(path); err != nil {
 		return Config{}, false, err
 	}
 	cfg, err := decode(data)
@@ -164,18 +161,39 @@ func LoadOrCreate(path string, service Service, cacheDir string) (Config, bool, 
 
 // checkPrivate refuses configuration that other local users can modify,
 // because it controls remote-client exposure and routing targets.
-func checkPrivate(path string) error {
+func checkPrivate(path string, info os.FileInfo) error {
 	if runtime.GOOS == "windows" {
 		return nil
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return fmt.Errorf("inspect config %q: %w", path, err)
 	}
 	if info.Mode().Perm()&0o022 != 0 {
 		return fmt.Errorf("config %q is writable by other users (mode %04o); run chmod go-w on it", path, info.Mode().Perm())
 	}
 	return nil
+}
+
+// readPrivate reads a configuration file after checking, on the open file,
+// that other users cannot modify it.
+func readPrivate(path string) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("read config %q: %w", path, err)
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("inspect config %q: %w", path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("read config %q: not a regular file", path)
+	}
+	if err := checkPrivate(path, info); err != nil {
+		return nil, err
+	}
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return nil, fmt.Errorf("read config %q: %w", path, err)
+	}
+	return data, nil
 }
 
 func decode(data []byte) (Config, error) {
@@ -328,8 +346,8 @@ func ValidateRule(rule RedirectRule, allowRemote bool) error {
 		}
 	}
 	for _, domain := range rule.Domains {
-		if domain == "" || strings.ContainsAny(domain, "/?#") {
-			return fmt.Errorf("invalid domain %q", domain)
+		if !validDomain(NormalizeDomain(domain)) {
+			return fmt.Errorf("invalid domain %q: use a hostname or IP address without a port, for example app.example.com", domain)
 		}
 	}
 	for _, prefix := range append(append([]string{}, rule.Include...), rule.Exclude...) {
@@ -407,4 +425,32 @@ func firstNonNil[T any](values ...[]T) []T {
 		}
 	}
 	return nil
+}
+
+// NormalizeDomain returns the form in which rule domains are compared:
+// lowercase, without surrounding spaces or a trailing dot.
+func NormalizeDomain(domain string) string {
+	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(domain)), ".")
+}
+
+// validDomain accepts an IP address or a hostname made of letters, digits,
+// hyphens, and underscores. It rejects ports, wildcards, and URLs.
+func validDomain(domain string) bool {
+	if net.ParseIP(domain) != nil {
+		return true
+	}
+	if domain == "" || len(domain) > 253 {
+		return false
+	}
+	for _, label := range strings.Split(domain, ".") {
+		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, c := range label {
+			if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-' && c != '_' {
+				return false
+			}
+		}
+	}
+	return true
 }

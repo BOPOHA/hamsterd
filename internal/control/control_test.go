@@ -168,3 +168,53 @@ func TestCloseKeepsReplacedEndpointFile(t *testing.T) {
 		t.Fatalf("another instance's endpoint file was removed: %v", err)
 	}
 }
+
+func TestClientRefusesDisguisedEndpointURL(t *testing.T) {
+	_, endpoint, dir := startTestServer(t)
+	for _, url := range []string{
+		strings.Replace(endpoint.URL, "http://", "http://127.0.0.1:1@", 1),
+		"http://127.0.0.1:1@attacker.example",
+		"https://127.0.0.1:1",
+		endpoint.URL + "/prefix",
+		"http://127.0.0.1",
+	} {
+		replaced := endpoint
+		replaced.URL = url
+		if err := writeEndpoint(filepath.Join(dir, FileName), replaced); err != nil {
+			t.Fatal(err)
+		}
+		if err := NewClient(dir, "lemmingd").Do(context.Background(), "GET", "/v1/ping", nil, nil); err == nil || !strings.Contains(err.Error(), "local") {
+			t.Fatalf("endpoint %q error = %v", url, err)
+		}
+	}
+}
+
+func TestClientTreatsDeadPIDAsNotRunning(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("PIDs are not checked on Windows")
+	}
+	_, endpoint, dir := startTestServer(t)
+	endpoint.PID = 1 << 30
+	if err := writeEndpoint(filepath.Join(dir, FileName), endpoint); err != nil {
+		t.Fatal(err)
+	}
+	if err := NewClient(dir, "lemmingd").Do(context.Background(), "GET", "/v1/ping", nil, nil); !errors.Is(err, ErrNotRunning) {
+		t.Fatalf("dead PID error = %v", err)
+	}
+}
+
+func TestStartRefusesSharedDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permissions only")
+	}
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Start(dir, "lemmingd", http.NotFoundHandler(), log.New(io.Discard, "", 0)); err == nil || !strings.Contains(err.Error(), "accessible by other users") {
+		t.Fatalf("Start in a shared directory = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, FileName)); !os.IsNotExist(err) {
+		t.Fatalf("endpoint file written: %v", err)
+	}
+}

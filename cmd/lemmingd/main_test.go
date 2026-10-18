@@ -12,7 +12,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/BOPOHA/hamsterd/internal/config"
 	"github.com/BOPOHA/hamsterd/internal/firefox"
+	"github.com/BOPOHA/hamsterd/internal/lemming"
 )
 
 func TestRunVersionAndFlagErrors(t *testing.T) {
@@ -248,3 +250,32 @@ func TestInformationHandler(t *testing.T) {
 		t.Fatalf("content disposition = %q", got)
 	}
 }
+
+func TestRecordingRoundTripperRecordsFailures(t *testing.T) {
+	service, err := lemming.New(filepath.Join(t.TempDir(), "config.json"), config.Config{Version: 1, Listen: "127.0.0.1:18080"}, lemming.Info{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	refused := errors.New("connection refused")
+	failing := roundTripFunc(func(*http.Request) (*http.Response, error) { return nil, refused })
+	record := lemming.RequestView{Method: "GET", Host: "app.example", Path: "/", Target: "127.0.0.1:5173"}
+	request := httptest.NewRequest("GET", "http://127.0.0.1:5173/", nil)
+	if _, err := recordingRoundTripper(failing, service, record).RoundTrip(request, nil); !errors.Is(err, refused) {
+		t.Fatalf("RoundTrip error = %v", err)
+	}
+	ok := roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusNoContent}, nil
+	})
+	if _, err := recordingRoundTripper(ok, service, record).RoundTrip(request, nil); err != nil {
+		t.Fatal(err)
+	}
+	recent := service.Recent(0)
+	if len(recent) != 2 || recent[0].Status != http.StatusNoContent || recent[0].Error != "" ||
+		recent[1].Status != http.StatusBadGateway || recent[1].Error != refused.Error() || recent[1].Target != record.Target || recent[1].Time.IsZero() {
+		t.Fatalf("recent = %+v", recent)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) { return f(request) }

@@ -21,7 +21,12 @@ These tools control the lemmingd instance that is already running on this
 machine. Rules from config.json are read-only; rules added here are stored in
 rules.auto.json and take effect immediately. Use test_route to check where a URL
 goes before and after changing rules, and recent_requests to see what the
-browser actually requested.`
+browser actually requested.
+
+A rule change applies to new connections. A browser may keep using an open
+connection to a domain, which stays tunneled after a rule for it is added and
+stays routed after its rule is removed, until the connection closes; reload
+the page or restart the browser if test_route and recent_requests disagree.`
 
 // NewMCPServer returns an MCP server whose tools call the control API
 // published in configDir.
@@ -79,7 +84,8 @@ func NewMCPServer(configDir, version string) *mcp.Server {
 		Name:  "recent_requests",
 		Title: "Recent proxied requests",
 		Description: "List recent requests that lemmingd could see, newest first, with the local target when a rule routed them. " +
-			"These are requests to domains listed in a rule and plain HTTP requests; HTTPS to other domains is tunneled unchanged and not visible. Query strings are not recorded.",
+			"These are requests to domains listed in a rule and plain HTTP requests; HTTPS to other domains is tunneled unchanged and not visible. " +
+			"Requests that got no response, for example because the target refused the connection, have status 502 and an error. Query strings are not recorded.",
 		Annotations: readOnly,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input recentInput) (*mcp.CallToolResult, requestsOutput, error) {
 		limit := input.Limit

@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 // AutoRulesFile is the name of the file, next to config.json, that holds
@@ -41,14 +40,11 @@ func AutoRulesPath(configPath string) string {
 
 // LoadAutoRules reads the auto rules file. A missing file has no rules.
 func LoadAutoRules(path string) ([]RedirectRule, error) {
-	data, err := os.ReadFile(path)
+	data, err := readPrivate(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("read %q: %w", path, err)
-	}
-	if err := checkPrivate(path); err != nil {
 		return nil, err
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -90,7 +86,7 @@ func WriteAutoRules(path string, rules []RedirectRule) error {
 	if err != nil {
 		return fmt.Errorf("encode auto rules: %w", err)
 	}
-	return writePrivateFile(path, append(data, '\n'))
+	return writeFileAtomic(path, append(data, '\n'), 0o600)
 }
 
 // ValidateRules checks rules against a configuration's remote-target setting
@@ -102,7 +98,7 @@ func ValidateRules(rules []RedirectRule, allowRemoteTargets bool) error {
 			return fmt.Errorf("rules[%d]: %w", i, err)
 		}
 		for _, domain := range rule.Domains {
-			key := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(domain)), ".")
+			key := NormalizeDomain(domain)
 			if _, duplicate := seen[key]; duplicate {
 				return fmt.Errorf("rules[%d]: domain %q is already routed by another rule", i, domain)
 			}
@@ -112,64 +108,92 @@ func ValidateRules(rules []RedirectRule, allowRemoteTargets bool) error {
 	return nil
 }
 
+// ErrInvalidMerge reports that merging would produce an invalid
+// configuration. Neither file is changed.
+var ErrInvalidMerge = errors.New("merged configuration is invalid")
+
+// MergeResult describes a completed merge.
+type MergeResult struct {
+	// Merged is the number of rules moved into config.json.
+	Merged int
+	// Backup is the copy of the previous config.json, empty when nothing
+	// was merged.
+	Backup string
+}
+
 // MergeAutoRules appends the auto rules to config.json and removes the auto
-// rules file. The previous config.json is kept as config.json.bak. It returns
-// the number of merged rules. Callers must ensure that no running lemmingd
-// is managing the auto rules file, or ask it to merge instead.
-func MergeAutoRules(configPath string) (int, error) {
+// rules file. The previous config.json is kept as config.json.bak, replacing
+// an older backup. The merged file is rewritten in canonical form, keeps its
+// permissions, and replaces the target of a symbolic link rather than the
+// link. If verify is not nil, it is called with the configuration read from
+// disk and can refuse the merge. Callers must ensure that no running
+// lemmingd is managing the auto rules file, or ask it to merge instead.
+func MergeAutoRules(configPath string, verify func(onDisk Config) error) (MergeResult, error) {
 	autoPath := AutoRulesPath(configPath)
 	auto, err := LoadAutoRules(autoPath)
 	if err != nil {
-		return 0, err
+		return MergeResult{}, err
 	}
 	if len(auto) == 0 {
-		return 0, nil
+		return MergeResult{}, nil
 	}
-	data, err := os.ReadFile(configPath)
+	target, err := filepath.EvalSymlinks(configPath)
 	if err != nil {
-		return 0, fmt.Errorf("read config %q: %w", configPath, err)
+		return MergeResult{}, fmt.Errorf("read config %q: %w", configPath, err)
 	}
-	if err := checkPrivate(configPath); err != nil {
-		return 0, err
+	data, err := readPrivate(target)
+	if err != nil {
+		return MergeResult{}, err
+	}
+	info, err := os.Stat(target)
+	if err != nil {
+		return MergeResult{}, fmt.Errorf("inspect config %q: %w", configPath, err)
 	}
 	cfg, err := decode(data)
 	if err != nil {
-		return 0, fmt.Errorf("parse config %q: %w", configPath, err)
+		return MergeResult{}, fmt.Errorf("parse config %q: %w", configPath, err)
+	}
+	if verify != nil {
+		if err := verify(cfg); err != nil {
+			return MergeResult{}, err
+		}
 	}
 	cfg.Rules = append(cfg.Rules, auto...)
 	if err := cfg.Validate(Lemmingd); err != nil {
-		return 0, fmt.Errorf("merged configuration is invalid: %w", err)
+		return MergeResult{}, fmt.Errorf("%w: %w", ErrInvalidMerge, err)
 	}
 	if err := ValidateRules(cfg.Rules, cfg.AllowRemoteTargets); err != nil {
-		return 0, fmt.Errorf("merged configuration is invalid: %w", err)
+		return MergeResult{}, fmt.Errorf("%w: %w", ErrInvalidMerge, err)
 	}
 	merged, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
-		return 0, fmt.Errorf("encode merged config: %w", err)
+		return MergeResult{}, fmt.Errorf("encode merged config: %w", err)
 	}
-	if err := writePrivateFile(configPath+".bak", data); err != nil {
-		return 0, fmt.Errorf("back up config: %w", err)
+	backup := configPath + ".bak"
+	if err := writeFileAtomic(backup, data, 0o600); err != nil {
+		return MergeResult{}, fmt.Errorf("back up config: %w", err)
 	}
 	// Unlike writeConfig for a new file, do not change the permissions of
 	// the directory, which -config may point to.
-	if err := writePrivateFile(configPath, append(merged, '\n')); err != nil {
-		return 0, err
+	if err := writeFileAtomic(target, append(merged, '\n'), info.Mode().Perm()&^0o022); err != nil {
+		return MergeResult{}, err
 	}
 	if err := WriteAutoRules(autoPath, nil); err != nil {
-		return 0, err
+		return MergeResult{}, err
 	}
-	return len(auto), nil
+	return MergeResult{Merged: len(auto), Backup: backup}, nil
 }
 
-// writePrivateFile atomically writes a 0600 file in an existing directory.
-func writePrivateFile(path string, data []byte) error {
+// writeFileAtomic atomically writes a file with mode perm in an existing
+// directory.
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
 	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*.tmp")
 	if err != nil {
 		return fmt.Errorf("create temporary file for %q: %w", path, err)
 	}
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
-	if err := tmp.Chmod(0o600); err != nil {
+	if err := tmp.Chmod(perm); err != nil {
 		tmp.Close()
 		return fmt.Errorf("secure temporary file for %q: %w", path, err)
 	}

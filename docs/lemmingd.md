@@ -411,8 +411,8 @@ Each domain can appear in only one rule. For a configured domain, routing is:
    target.
 3. Otherwise, use the real server.
 
-Domains are exact hostnames, matched case-insensitively; wildcard domains are
-not supported. Paths are case-sensitive string prefixes. A configured HTTPS
+Domains are exact hostnames or IP addresses, matched case-insensitively and
+written without a port; wildcard domains are not supported. Paths are case-sensitive string prefixes. A configured HTTPS
 domain is intercepted so that `lemmingd` can inspect its path, including paths
 that ultimately continue to the real server. HTTPS domains with no rule are
 tunneled without interception.
@@ -502,7 +502,7 @@ proxy restarts. It provides these tools:
 | `status` | Proxy address for browsers, version, CA certificate file and fingerprint, remote-access settings, rule counts |
 | `list_rules` | All rules in order, with `source` `config` (from `config.json`) or `auto` |
 | `test_route` | Whether a URL is intercepted, and whether a local target or the real server answers, with the exact target URL |
-| `recent_requests` | Recent requests to rule domains and plain HTTP requests, newest first, with the target that served them; tunneled HTTPS to other domains is not visible, and query strings are not recorded; keeps the last 200 and returns 50 by default (`limit` 1-200) |
+| `recent_requests` | Recent requests to rule domains and plain HTTP requests, newest first, with the target that served them; requests that got no response, for example from a dev server that is not running, have status `502` and an `error`; tunneled HTTPS to other domains is not visible, and query strings are not recorded; keeps the last 200 and returns 50 by default (`limit` 1-200) |
 | `add_rule` | Add a rule; it applies immediately and is saved |
 | `remove_rule` | Remove a rule added with `add_rule`, by one of its domains |
 
@@ -584,8 +584,20 @@ args = ["mcp"]
 - **The same error although lemmingd is running:** `lemmingd mcp` reads
   `control.json` from the directory of the configuration file it is given. Pass
   the same `-config PATH` to `lemmingd mcp` as to `lemmingd`.
-- **"control.json is accessible by other users":** the file must be readable
-  only by you. Stop lemmingd, delete `control.json`, and start lemmingd again.
+- **"control.json is accessible by other users" or "is owned by another
+  user":** the file must be owned by and readable only by you. Stop lemmingd,
+  delete `control.json`, and start lemmingd again. If lemmingd itself reports
+  that the configuration directory is accessible by other users, run
+  `chmod go-w` on that directory.
+- **`test_route` says a URL is routed, but the browser still shows the real
+  site (or the other way round):** rule changes apply to new connections. The
+  browser may keep using a connection it opened before the change; reload the
+  page, or close and reopen the browser if that is not enough.
+- **Rule changes fail with "rules.auto.json was not loaded":** lemmingd found
+  `rules.auto.json` invalid at startup, for example because a rule conflicts
+  with `config.json`, and started with the `config.json` rules only. The log and
+  the `status` tool show the reason. Fix or delete the file and restart
+  lemmingd.
 - **The client cannot start `lemmingd`:** use the absolute path of the binary
   in the client configuration, as described above.
 - **`add_rule` is refused:** the error names the reason, for example a
@@ -598,7 +610,10 @@ Rules added through the control API are stored in `rules.auto.json` next to
 `config.json`, following the idea of PostgreSQL's `postgresql.auto.conf`:
 `config.json` stays yours: the MCP tools never write it, and only
 `lemmingd config merge` rewrites it, in canonical JSON form without your
-formatting or legacy field names, keeping the original as `config.json.bak`. The effective rules
+formatting or legacy field names, keeping the original as `config.json.bak`.
+Each merge replaces the previous `config.json.bak`. The merged file keeps its
+permissions, and if `config.json` is a symbolic link, the file it points to is
+updated and the link is kept. The effective rules
 are the `config.json` rules followed by the `rules.auto.json` rules, and a
 domain may appear in only one of them. `rules.auto.json` can contain only rules,
 so neither an agent nor anything that writes that file can change `listen`,
@@ -606,6 +621,12 @@ so neither an agent nor anything that writes that file can change `listen`,
 loopback unless `config.json` already sets `allow_remote_targets`, and rules
 from `config.json` cannot be removed through the API. At most 100 rules can be
 added this way.
+
+If `rules.auto.json` is invalid when `lemmingd` starts, for example because
+`config.json` now routes one of its domains or no longer sets
+`allow_remote_targets`, `lemmingd` logs a warning and starts with the
+`config.json` rules only. It then refuses rule changes and merges through the
+API, so the file is kept for you to fix or delete before the next start.
 
 To inspect or keep these rules:
 
@@ -619,7 +640,10 @@ rules. `lemmingd config merge` appends them to the `rules` list in
 `config.json`, keeps the previous file as `config.json.bak`, validates the
 result first, and then removes `rules.auto.json`. When a `lemmingd` with the
 control API is running, the command asks it to perform the merge so that its
-live rules stay consistent; otherwise it edits the files directly. To discard
+live rules stay consistent; otherwise it edits the files directly. A running
+`lemmingd` refuses to merge if the rules in `config.json` changed since it
+started, because its live rules would no longer match the file; restart it
+first. To discard
 the agent's rules instead, delete `rules.auto.json` and restart `lemmingd`.
 Merging is a command-line operation only; agents cannot change `config.json`.
 
@@ -670,6 +694,10 @@ through DNS rebinding or cross-site requests. The API never exposes `ca.key`.
 
 - Enable `control_api` only when you use `lemmingd mcp` or
   `lemmingd config merge` with a running instance; it is off by default.
+  Whoever can call the MCP tools can intercept any domain in clients that
+  trust the CA, and sees the paths of recent requests. See
+  [the accepted risks](../SECURITY.md#accepted-risks-of-the-control-api)
+  before combining it with `allow_remote_targets` or `allow_remote_clients`.
 - Keep the listener on `127.0.0.1`. Setting `allow_remote_clients` does not add
   authentication. It refuses loopback, link-local, and metadata destinations
   other than the targets of the current rules, including rules added through

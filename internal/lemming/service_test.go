@@ -2,8 +2,11 @@ package lemming
 
 import (
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -89,7 +92,7 @@ func TestAddRuleEnforcesConfiguration(t *testing.T) {
 func TestAddRuleLimit(t *testing.T) {
 	service, _ := newTestService(t, config.Config{})
 	for i := range config.MaxAutoRules {
-		domain := "app" + strings.Repeat("x", i) + ".example"
+		domain := "app" + strconv.Itoa(i) + ".example"
 		if _, err := service.AddRule(config.RedirectRule{Target: "127.0.0.1:5173", Domains: []string{domain}, Include: []string{"/"}}); err != nil {
 			t.Fatal(err)
 		}
@@ -99,7 +102,7 @@ func TestAddRuleLimit(t *testing.T) {
 	}
 }
 
-func TestNewLoadsAutoRulesAndRejectsConflicts(t *testing.T) {
+func TestNewLoadsAutoRulesAndSkipsConflicts(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.json")
 	if err := config.WriteAutoRules(config.AutoRulesPath(configPath), []config.RedirectRule{{Target: "127.0.0.1:5173", Domains: []string{"app.example"}, Include: []string{"/"}}}); err != nil {
@@ -111,8 +114,60 @@ func TestNewLoadsAutoRulesAndRejectsConflicts(t *testing.T) {
 		t.Fatalf("New = (%v, %v)", service, err)
 	}
 	cfg.Rules = append(cfg.Rules, config.RedirectRule{Target: "127.0.0.1:4000", Domains: []string{"app.example"}, Include: []string{"/"}})
-	if _, err := New(configPath, cfg, Info{}); err == nil || !strings.Contains(err.Error(), config.AutoRulesFile) {
-		t.Fatalf("conflict error = %v", err)
+	service, err = New(configPath, cfg, Info{})
+	if err != nil {
+		t.Fatalf("invalid auto rules prevented startup: %v", err)
+	}
+	if err := service.AutoRulesError(); err == nil || !strings.Contains(err.Error(), config.AutoRulesFile) {
+		t.Fatalf("AutoRulesError = %v", err)
+	}
+	if service.AutoRuleCount() != 0 || len(service.Rules()) != 2 || service.Status().AutoRulesError == "" {
+		t.Fatalf("service with skipped auto rules = %+v", service.Status())
+	}
+	before, _ := os.ReadFile(config.AutoRulesPath(configPath))
+	if _, err := service.AddRule(config.RedirectRule{Target: "127.0.0.1:5174", Domains: []string{"new.example"}, Include: []string{"/"}}); err == nil {
+		t.Fatal("rule added while rules.auto.json is skipped")
+	}
+	if _, err := service.RemoveRule("app.example"); err == nil {
+		t.Fatal("rule removed while rules.auto.json is skipped")
+	}
+	if _, err := service.Merge(); err == nil {
+		t.Fatal("merged while rules.auto.json is skipped")
+	}
+	if after, _ := os.ReadFile(config.AutoRulesPath(configPath)); string(after) != string(before) {
+		t.Fatalf("skipped rules.auto.json changed:\n%s", after)
+	}
+}
+
+func TestNewSkipsUnreadableAutoRules(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(config.AutoRulesPath(configPath), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(configPath, config.Config{Version: 1, Listen: "127.0.0.1:18080", Rules: []config.RedirectRule{configRule}}, Info{})
+	if err != nil || service.AutoRulesError() == nil || !service.Router().Intercepts("api.example") {
+		t.Fatalf("New = (%v, %v)", service, err)
+	}
+}
+
+func TestRejectedRuleIsNotSaved(t *testing.T) {
+	service, configPath := newTestService(t, config.Config{})
+	if _, err := service.AddRule(config.RedirectRule{Target: "127.0.0.1:5173", Domains: []string{"app.example"}, Include: []string{"/"}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, domain := range []string{"App.Example.", "app.example:443", "*.example", "app example"} {
+		if _, err := service.AddRule(config.RedirectRule{Target: "127.0.0.1:5174", Domains: []string{domain}, Include: []string{"/"}}); err == nil {
+			t.Fatalf("domain %q accepted", domain)
+		}
+	}
+	saved, err := config.LoadAutoRules(config.AutoRulesPath(configPath))
+	if err != nil || len(saved) != 1 {
+		t.Fatalf("saved rules = (%+v, %v)", saved, err)
+	}
+	restarted, err := New(configPath, config.Config{Version: 1, Listen: "127.0.0.1:18080"}, Info{})
+	if err != nil || restarted.AutoRulesError() != nil || restarted.AutoRuleCount() != 1 {
+		t.Fatalf("restart = (%v, %v)", restarted, err)
 	}
 }
 
@@ -127,6 +182,10 @@ func TestRouteExplainsDecisions(t *testing.T) {
 	excluded, _ := service.Route("https://app.example/api/users")
 	if !excluded.Intercepted || excluded.Routed || excluded.Target != "" {
 		t.Fatalf("excluded = %+v", excluded)
+	}
+	root, _ := service.Route("https://app.example")
+	if !root.Routed || root.TargetURL != "http://127.0.0.1:5173/" {
+		t.Fatalf("URL without a path = %+v", root)
 	}
 	other, _ := service.Route("https://other.example/")
 	if other.Intercepted || other.Routed {
@@ -171,8 +230,8 @@ func TestMergeMovesAutoRulesIntoConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	merged, err := service.Merge()
-	if err != nil || merged != 1 {
-		t.Fatalf("Merge = (%d, %v)", merged, err)
+	if err != nil || merged.Merged != 1 || merged.Backup != configPath+".bak" {
+		t.Fatalf("Merge = (%+v, %v)", merged, err)
 	}
 	rules := service.Rules()
 	if len(rules) != 1 || rules[0].Source != SourceConfig || !service.Router().Intercepts("app.example") {
@@ -181,5 +240,59 @@ func TestMergeMovesAutoRulesIntoConfig(t *testing.T) {
 	reloaded, _, err := config.LoadOrCreate(configPath, config.Lemmingd, "")
 	if err != nil || len(reloaded.Rules) != 1 {
 		t.Fatalf("config after merge = (%+v, %v)", reloaded, err)
+	}
+}
+
+func TestMergeRefusesConfigChangedOnDisk(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(configPath, []byte(`{"version":1,"listen":"127.0.0.1:18080"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := config.LoadOrCreate(configPath, config.Lemmingd, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(configPath, cfg, Info{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.AddRule(config.RedirectRule{Target: "127.0.0.1:5173", Domains: []string{"app.example"}, Include: []string{"/"}}); err != nil {
+		t.Fatal(err)
+	}
+	edited := `{"version":1,"listen":"127.0.0.1:18080","rules":[{"target":"127.0.0.1:3000","domains":["api.example"],"include_paths":["/"]}]}`
+	if err := os.WriteFile(configPath, []byte(edited), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Merge(); err == nil || !strings.Contains(err.Error(), "restart lemmingd") {
+		t.Fatalf("merge error = %v", err)
+	}
+	if data, _ := os.ReadFile(configPath); string(data) != edited {
+		t.Fatalf("config changed: %s", data)
+	}
+	if service.AutoRuleCount() != 1 {
+		t.Fatal("auto rules dropped after a refused merge")
+	}
+}
+
+func TestHandlerStatusCodes(t *testing.T) {
+	service, _ := newTestService(t, config.Config{Version: 1, Listen: "127.0.0.1:18080", Rules: []config.RedirectRule{configRule}})
+	handler := service.Handler()
+	for _, test := range []struct {
+		method, target, body string
+		status               int
+	}{
+		{"DELETE", "/v1/rules", "", http.StatusBadRequest},
+		{"DELETE", "/v1/rules?domain=api.example", "", http.StatusConflict},
+		{"DELETE", "/v1/rules?domain=none.example", "", http.StatusNotFound},
+		{"POST", "/v1/rules", `{"target":"127.0.0.1:5173","domains":["api.example"],"include_paths":["/"]}`, http.StatusUnprocessableEntity},
+		{"POST", "/v1/rules", `{"target":"127.0.0.1:5173","domains":["app.example"],"include_paths":["/"]}`, http.StatusCreated},
+		{"POST", "/v1/merge", "", http.StatusInternalServerError}, // config.json does not exist
+	} {
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, httptest.NewRequest(test.method, test.target, strings.NewReader(test.body)))
+		if recorder.Code != test.status {
+			t.Fatalf("%s %s = %d %s, want %d", test.method, test.target, recorder.Code, recorder.Body, test.status)
+		}
 	}
 }

@@ -122,23 +122,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return proxycore.Tunnel, host
 	})
 	proxy.OnRequest().DoFunc(func(request *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-		ctx.UserData = requestRecord{method: request.Method, host: request.URL.Hostname(), path: request.URL.EscapedPath()}
+		record := lemming.RequestView{Method: request.Method, Host: request.URL.Hostname(), Path: request.URL.EscapedPath()}
 		rewritten, changed := service.Router().Rewrite(request)
 		if changed {
 			logger.Printf("session=%d route host=%s path=%s target=%s",
 				ctx.Session, request.URL.Hostname(), request.URL.EscapedPath(), rewritten.URL.Host)
-			ctx.UserData = requestRecord{method: request.Method, host: request.URL.Hostname(), path: request.URL.EscapedPath(), target: rewritten.URL.Host}
+			record.Target = rewritten.URL.Host
 		}
+		ctx.RoundTripper = recordingRoundTripper(proxy.Tr, service, record)
 		return rewritten, nil
-	})
-	proxy.OnResponse().DoFunc(func(response *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
-		if record, ok := ctx.UserData.(requestRecord); ok && response != nil {
-			service.Record(lemming.RequestView{
-				Time: time.Now().UTC(), Method: record.method, Host: record.host, Path: record.path,
-				Target: record.target, Status: response.StatusCode,
-			})
-		}
-		return response
 	})
 	proxy.NonproxyHandler = informationHandler(ca.PEM)
 
@@ -152,6 +144,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if ca.ExpiresSoon(time.Now()) {
 		logger.Printf("warning: CA expires at %s; before then, remove it from client trust stores, delete %s and %s, restart, and trust the new CA",
 			ca.Certificate.Leaf.NotAfter.Format(time.RFC3339), *caCertPath, *caKeyPath)
+	}
+	if err := service.AutoRulesError(); err != nil {
+		logger.Printf("warning: %v; continuing with the rules from %s only", err, *configPath)
 	}
 	if count := service.AutoRuleCount(); count > 0 {
 		logger.Printf("loaded %d rules from %s; run \"lemmingd config merge\" to move them into %s", count, config.AutoRulesPath(*configPath), *configPath)
@@ -199,8 +194,21 @@ func run(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-type requestRecord struct {
-	method, host, path, target string
+// recordingRoundTripper sends a request and records its outcome, including
+// requests that got no response, which goproxy's response handlers do not
+// see for intercepted HTTPS.
+func recordingRoundTripper(transport http.RoundTripper, service *lemming.Service, record lemming.RequestView) goproxy.RoundTripper {
+	return goproxy.RoundTripperFunc(func(request *http.Request, _ *goproxy.ProxyCtx) (*http.Response, error) {
+		response, err := transport.RoundTrip(request)
+		record.Time = time.Now().UTC()
+		if err != nil {
+			record.Status, record.Error = http.StatusBadGateway, err.Error()
+		} else {
+			record.Status = response.StatusCode
+		}
+		service.Record(record)
+		return response, err
+	})
 }
 
 // clientAddress turns a wildcard listen address into one that local clients

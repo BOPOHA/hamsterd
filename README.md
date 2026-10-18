@@ -260,6 +260,9 @@ The agent can then check where a URL goes, add or remove routing rules live,
 and see which requests the browser made. Agent-added rules are kept in
 `rules.auto.json`; `lemmingd config merge` moves them into `config.json`. See
 [Control lemmingd from coding agents](docs/lemmingd.md#control-lemmingd-from-coding-agents-mcp).
+An agent with these tools can intercept any domain in a browser that trusts the
+lemmingd CA; read the
+[accepted risks](SECURITY.md#accepted-risks-of-the-control-api) first.
 
 ## Configuration
 

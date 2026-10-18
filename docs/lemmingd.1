@@ -63,6 +63,10 @@ moves those rules into
 .IR config.json ,
 keeping the previous file as
 .IR config.json.bak .
+An invalid
+.I rules.auto.json
+is skipped with a warning at startup, and rule changes are then refused until
+it is fixed or removed.
 .SH OPTIONS
 .TP
 .BI \-config " path"
@@ -132,6 +136,17 @@ because intercepted HTTPS traffic then crosses the network unencrypted.
 The managed Firefox profile is private to the operating-system user but can
 contain authenticated browsing state. Remove it when that state is no longer
 needed.
+.PP
+Whoever can call the
+.B mcp
+tools can add a rule for any domain, so that clients trusting the CA send that
+site's cookies and credentials to the rule's target, and can read the paths of
+recent requests. With
+.BR allow_remote_clients ,
+rule targets, including those added through the control API, are exempt from
+the loopback destination checks. These are accepted risks of
+.BR control_api ;
+see SECURITY.md.
 .SH SEE ALSO
 .BR hamsterd (1),
 the project README, and SECURITY.md.

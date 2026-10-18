@@ -60,6 +60,35 @@ read `config.json` and `ca.key`.
 Rules added through the API are written to `rules.auto.json`, which accepts
 only routing rules. Agents cannot enable remote clients or remote targets,
 change the listen address, remove rules from `config.json`, or read `ca.key`.
+`control.json` is refused unless your user (or root) owns it and only you can
+read it, and the control API does not start in a configuration directory that
+the group or other users can write.
+
+### Accepted risks of the control API
+
+Enabling `control_api` accepts these risks by design:
+
+- **Any domain can be intercepted.** Whoever can call the MCP tools, including
+  an agent acting on prompt-injected instructions from a web page, document, or
+  repository it reads, can add a rule for any domain. Every client that trusts
+  the lemmingd CA, such as the managed Firefox profile, then sends that site's
+  cookies and credentials to the rule's target. With `allow_remote_targets`,
+  that target can be a remote server, which turns a single tool call into a
+  way to send credentials off the machine. Use a dedicated browser profile
+  without accounts you care about, keep `allow_remote_targets` off when
+  `control_api` is on, and review agent-added rules with `list_rules` or
+  `lemmingd config show`.
+- **Rules relax the remote-client guard.** With `allow_remote_clients`, the
+  targets of all rules, including rules added through the control API, are
+  exempt from the loopback, link-local, and metadata destination checks. An
+  agent can therefore make a loopback HTTP service on the proxy host reachable
+  by every network client that can use the proxy. Do not combine
+  `control_api` with `allow_remote_clients` on a shared network.
+- **Request paths reach the agent.** `recent_requests` returns the method,
+  host, and path of requests to rule domains and of plain HTTP requests. Query
+  strings are removed, but paths can still contain secrets such as password
+  reset or invitation tokens and signed-URL segments. These paths enter the
+  agent's context and may be sent to its model provider.
 
 ## Shared development cache
 

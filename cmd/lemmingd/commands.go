@@ -138,11 +138,9 @@ func mergeConfig(configPath string, stdout, stderr io.Writer) int {
 	var result lemming.MergeView
 	err := client.Do(context.Background(), "POST", "/v1/merge", nil, &result)
 	if errors.Is(err, control.ErrNotRunning) {
-		result.ConfigFile = configPath
-		result.Merged, err = config.MergeAutoRules(configPath)
-		if result.Merged > 0 {
-			result.Backup = configPath + ".bak"
-		}
+		var merged config.MergeResult
+		merged, err = config.MergeAutoRules(configPath, nil)
+		result = lemming.MergeView{Merged: merged.Merged, ConfigFile: configPath, Backup: merged.Backup}
 	}
 	if err != nil {
 		fmt.Fprintf(stderr, "lemmingd config merge: %v\n", err)

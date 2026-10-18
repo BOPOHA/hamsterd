@@ -20,10 +20,9 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
-	"strings"
 	"time"
 )
 
@@ -59,6 +58,13 @@ type Server struct {
 // Start serves handler on a random loopback port and writes the endpoint
 // file into dir, which must already exist and be private to the user.
 func Start(dir, service string, handler http.Handler, logger *log.Logger) (*Server, error) {
+	info, err := os.Stat(dir)
+	if err != nil {
+		return nil, fmt.Errorf("inspect the control API directory: %w", err)
+	}
+	if err := checkOwner(dir, info, 0o022); err != nil {
+		return nil, fmt.Errorf("control API directory: %w", err)
+	}
 	secret := make([]byte, 32)
 	if _, err := rand.Read(secret); err != nil {
 		return nil, fmt.Errorf("generate control token: %w", err)
@@ -196,8 +202,14 @@ func (c *Client) Do(ctx context.Context, method, path string, in, out any) error
 	if err != nil {
 		return err
 	}
-	if endpoint.Service != c.service || !strings.HasPrefix(endpoint.URL, "http://127.0.0.1:") {
+	base, err := url.Parse(endpoint.URL)
+	if err != nil || endpoint.Service != c.service || base.Scheme != "http" || base.User != nil ||
+		base.Hostname() != "127.0.0.1" || base.Port() == "" || (base.Path != "" && base.Path != "/") ||
+		base.RawQuery != "" || base.Fragment != "" {
 		return fmt.Errorf("%s does not describe a local %s control API", FileName, c.service)
+	}
+	if !processAlive(endpoint.PID) {
+		return ErrNotRunning
 	}
 	var body io.Reader
 	if in != nil {
@@ -207,7 +219,7 @@ func (c *Client) Do(ctx context.Context, method, path string, in, out any) error
 		}
 		body = bytes.NewReader(data)
 	}
-	request, err := http.NewRequestWithContext(ctx, method, endpoint.URL+path, body)
+	request, err := http.NewRequestWithContext(ctx, method, "http://"+base.Host+path, body)
 	if err != nil {
 		return err
 	}
@@ -244,14 +256,24 @@ func (c *Client) Do(ctx context.Context, method, path string, in, out any) error
 }
 
 func readEndpoint(path string) (Endpoint, error) {
-	data, err := os.ReadFile(path)
+	file, err := os.Open(path)
 	if err != nil {
 		return Endpoint{}, err
 	}
-	if runtime.GOOS != "windows" {
-		if info, err := os.Stat(path); err == nil && info.Mode().Perm()&0o077 != 0 {
-			return Endpoint{}, fmt.Errorf("%s is accessible by other users (mode %04o)", path, info.Mode().Perm())
-		}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return Endpoint{}, err
+	}
+	if !info.Mode().IsRegular() {
+		return Endpoint{}, fmt.Errorf("%s is not a regular file", path)
+	}
+	if err := checkOwner(path, info, 0o077); err != nil {
+		return Endpoint{}, err
+	}
+	data, err := io.ReadAll(io.LimitReader(file, maxRequestBytes))
+	if err != nil {
+		return Endpoint{}, err
 	}
 	var endpoint Endpoint
 	if err := json.Unmarshal(data, &endpoint); err != nil {

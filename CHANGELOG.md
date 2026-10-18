@@ -14,7 +14,10 @@ versioning while the project remains below version 1.0.
   loopback port, protected by a per-start token in a private `control.json`
   and by Host, Origin, and Fetch Metadata checks.
 - Rules added through the control API apply without a restart and are stored
-  in `rules.auto.json`, which can contain only rules.
+  in `rules.auto.json`, which can contain only rules. An invalid
+  `rules.auto.json` is skipped with a warning instead of preventing startup.
+- `recent_requests` includes requests that got no response, with status `502`
+  and the error.
 - `lemmingd config show` prints the effective configuration, and
   `lemmingd config merge` moves `rules.auto.json` into `config.json`, keeping
   `config.json.bak`.
@@ -23,6 +26,18 @@ versioning while the project remains below version 1.0.
 
 - New lemmingd configuration files no longer contain an empty hamsterd
   `cache` section.
+- lemmingd rule domains must be hostnames or IP addresses without a port;
+  ports, wildcards, and spaces are now refused instead of silently never
+  matching.
+
+### Security
+
+- The control API documents its accepted risks: MCP callers can intercept any
+  domain, rule targets relax the remote-client guard, and `recent_requests`
+  exposes request paths to agents.
+- `control.json` must be owned by the current user, is checked on the open
+  file, and must point to a plain `http://127.0.0.1:PORT` URL; the control API
+  refuses to start in a directory writable by other users.
 
 ## [0.2.0] - 2026-10-18
 

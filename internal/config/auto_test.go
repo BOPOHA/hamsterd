@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -94,15 +95,15 @@ func TestMergeAutoRules(t *testing.T) {
 	if err := os.Chmod(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if merged, err := MergeAutoRules(configPath); err != nil || merged != 0 {
-		t.Fatalf("merge without auto rules = (%d, %v)", merged, err)
+	if merged, err := MergeAutoRules(configPath, nil); err != nil || merged.Merged != 0 || merged.Backup != "" {
+		t.Fatalf("merge without auto rules = (%+v, %v)", merged, err)
 	}
 	if err := WriteAutoRules(AutoRulesPath(configPath), []RedirectRule{{Target: "127.0.0.1:5173", Domains: []string{"app.example"}, Include: []string{"/"}}}); err != nil {
 		t.Fatal(err)
 	}
-	merged, err := MergeAutoRules(configPath)
-	if err != nil || merged != 1 {
-		t.Fatalf("merge = (%d, %v)", merged, err)
+	merged, err := MergeAutoRules(configPath, nil)
+	if err != nil || merged.Merged != 1 || merged.Backup != configPath+".bak" {
+		t.Fatalf("merge = (%+v, %v)", merged, err)
 	}
 	cfg, _, err := LoadOrCreate(configPath, Lemmingd, "")
 	if err != nil || len(cfg.Rules) != 2 || cfg.Rules[1].Domains[0] != "app.example" || cfg.Listen != "127.0.0.1:18080" {
@@ -134,8 +135,8 @@ func TestMergeAutoRulesRejectsConflictWithoutChanges(t *testing.T) {
 	if err := WriteAutoRules(autoPath, []RedirectRule{{Target: "127.0.0.1:5173", Domains: []string{"app.example"}, Include: []string{"/"}}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := MergeAutoRules(configPath); err == nil {
-		t.Fatal("conflicting merge succeeded")
+	if _, err := MergeAutoRules(configPath, nil); !errors.Is(err, ErrInvalidMerge) {
+		t.Fatalf("conflicting merge error = %v", err)
 	}
 	if data, _ := os.ReadFile(configPath); string(data) != original {
 		t.Fatalf("config changed: %s", data)
@@ -161,5 +162,66 @@ func TestControlAPIIsLemmingdOnly(t *testing.T) {
 	lemming.ControlAPI = true
 	if err := lemming.Validate(Lemmingd); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestMergeAutoRulesKeepsSymlinkAndMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symbolic links and modes differ on Windows")
+	}
+	dir := t.TempDir()
+	realPath := filepath.Join(dir, "real.json")
+	writeTestFile(t, realPath, `{"version":1,"listen":"127.0.0.1:18080"}`)
+	if err := os.Chmod(realPath, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(dir, "config.json")
+	if err := os.Symlink("real.json", configPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteAutoRules(AutoRulesPath(configPath), []RedirectRule{{Target: "127.0.0.1:5173", Domains: []string{"app.example"}, Include: []string{"/"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := MergeAutoRules(configPath, nil); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Lstat(configPath); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("config.json is no longer a symbolic link: %v %v", info.Mode(), err)
+	}
+	if info, err := os.Stat(realPath); err != nil || info.Mode().Perm() != 0o644 {
+		t.Fatalf("merged file mode = %v %v", info.Mode(), err)
+	}
+	if cfg, _, err := LoadOrCreate(configPath, Lemmingd, ""); err != nil || len(cfg.Rules) != 1 {
+		t.Fatalf("merged config = (%+v, %v)", cfg, err)
+	}
+}
+
+func TestMergeAutoRulesVerify(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	original := `{"version":1,"listen":"127.0.0.1:18080"}`
+	writeTestFile(t, configPath, original)
+	if err := WriteAutoRules(AutoRulesPath(configPath), []RedirectRule{{Target: "127.0.0.1:5173", Domains: []string{"app.example"}, Include: []string{"/"}}}); err != nil {
+		t.Fatal(err)
+	}
+	refused := errors.New("refused")
+	if _, err := MergeAutoRules(configPath, func(Config) error { return refused }); !errors.Is(err, refused) {
+		t.Fatalf("verify error = %v", err)
+	}
+	if data, _ := os.ReadFile(configPath); string(data) != original {
+		t.Fatalf("config changed: %s", data)
+	}
+}
+
+func TestValidDomain(t *testing.T) {
+	for _, domain := range []string{"app.example", "localhost", "my_host.internal", "a-b.example", "192.0.2.1", "::1", "xn--80ak6aa92e.com"} {
+		if !validDomain(NormalizeDomain(domain)) {
+			t.Errorf("%q rejected", domain)
+		}
+	}
+	for _, domain := range []string{"", "app.example:443", "*.example", "app example", "-app.example", "app..example", "[::1]", "app.example/x", strings.Repeat("a", 64) + ".example"} {
+		if validDomain(NormalizeDomain(domain)) {
+			t.Errorf("%q accepted", domain)
+		}
 	}
 }
