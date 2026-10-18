@@ -252,8 +252,12 @@ Set `"control_api": true` in lemmingd's `config.json`, restart it, and register
 the MCP server with your agent, for example:
 
 ```sh
-claude mcp add lemmingd -- lemmingd mcp
+claude mcp add --scope user lemmingd -- lemmingd mcp   # Claude Code
+codex mcp add lemmingd -- lemmingd mcp                 # OpenAI Codex CLI
 ```
+
+Claude Desktop, Cursor, and VS Code use a JSON entry; see
+[Connect your MCP client](docs/lemmingd.md#connect-your-mcp-client).
 
 The agent can then check where a URL goes, add or remove routing rules live,
 and see which requests the browser made. Agent-added rules are kept in

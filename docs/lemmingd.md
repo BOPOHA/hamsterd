@@ -485,24 +485,11 @@ editing `config.json`.
 
    The log then shows `control API enabled for lemmingd mcp`.
 
-2. Register `lemmingd mcp` with the agent. For Claude Code:
+2. Register `lemmingd mcp` with your agent, as described in
+   [Connect your MCP client](#connect-your-mcp-client).
 
-   ```sh
-   claude mcp add lemmingd -- lemmingd mcp
-   ```
-
-   Other MCP clients use the same command in their JSON configuration:
-
-   ```json
-   {
-     "mcpServers": {
-       "lemmingd": { "command": "lemmingd", "args": ["mcp"] }
-     }
-   }
-   ```
-
-   Pass `-config PATH` after `mcp` when `lemmingd` runs with a non-default
-   configuration file.
+3. Ask the agent to run lemmingd's `status` tool. It answers with the proxy
+   address to configure in the browser and the CA certificate to trust.
 
 `lemmingd mcp` never starts a proxy. It controls the `lemmingd` or
 `lemmingd firefox URL` that is already running, and keeps working when that
@@ -516,6 +503,92 @@ proxy restarts. It provides these tools:
 | `recent_requests` | Recent requests to rule domains and plain HTTP requests, newest first, with the target that served them; tunneled HTTPS to other domains is not visible, and query strings are not recorded |
 | `add_rule` | Add a rule; it applies immediately and is saved |
 | `remove_rule` | Remove a rule added with `add_rule`, by one of its domains |
+
+### Connect your MCP client
+
+`lemmingd mcp` is a local stdio server: the client starts it as a command and
+talks to it over standard input and output. Every client needs the same
+command, `lemmingd mcp`, written in its own configuration format.
+
+Desktop applications often do not inherit your shell's `PATH`. If the client
+reports that it cannot start `lemmingd`, use the absolute path printed by
+`command -v lemmingd` (for example `/opt/homebrew/bin/lemmingd` or
+`/usr/bin/lemmingd`). If `lemmingd` runs with a non-default configuration file,
+add `-config PATH` after `mcp`, with the same `PATH` that `lemmingd` uses.
+
+**Claude Code**
+
+```sh
+claude mcp add --scope user lemmingd -- lemmingd mcp
+claude mcp list
+```
+
+`--scope user` makes the server available in every project; the default scope
+is the current project only. Inside a session, `/mcp` shows its connection
+state and tools.
+
+**Claude Desktop**: edit `claude_desktop_config.json` (macOS:
+`~/Library/Application Support/Claude/`, Windows: `%APPDATA%\Claude\`), or
+open it with *Settings → Developer → Edit Config*, then restart Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "lemmingd": { "command": "/opt/homebrew/bin/lemmingd", "args": ["mcp"] }
+  }
+}
+```
+
+Its MCP logs are in `~/Library/Logs/Claude/` on macOS and
+`%APPDATA%\Claude\logs` on Windows.
+
+**Cursor**: the same `mcpServers` JSON in `~/.cursor/mcp.json` for all projects,
+or in `.cursor/mcp.json` inside one project.
+
+**VS Code (GitHub Copilot)**: VS Code uses a `servers` key. Add this to
+`.vscode/mcp.json` in a workspace, or run *MCP: Open User Configuration* for
+all workspaces:
+
+```json
+{
+  "servers": {
+    "lemmingd": { "type": "stdio", "command": "lemmingd", "args": ["mcp"] }
+  }
+}
+```
+
+**OpenAI Codex CLI**
+
+```sh
+codex mcp add lemmingd -- lemmingd mcp
+```
+
+or, in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.lemmingd]
+command = "lemmingd"
+args = ["mcp"]
+```
+
+**Other clients**: most accept the `mcpServers` JSON shown for Claude Desktop.
+
+### MCP troubleshooting
+
+- **Every tool answers "lemmingd is not running with its control API":**
+  start `lemmingd` or `lemmingd firefox URL`, and make sure its `config.json`
+  sets `"control_api": true`. The startup log must show
+  `control API enabled for lemmingd mcp`.
+- **The same error although lemmingd is running:** `lemmingd mcp` reads
+  `control.json` from the directory of the configuration file it is given. Pass
+  the same `-config PATH` to `lemmingd mcp` as to `lemmingd`.
+- **"control.json is accessible by other users":** the file must be readable
+  only by you. Stop lemmingd, delete `control.json`, and start lemmingd again.
+- **The client cannot start `lemmingd`:** use the absolute path of the binary
+  in the client configuration, as described above.
+- **`add_rule` is refused:** the error names the reason, for example a
+  non-loopback target without `allow_remote_targets`, or a domain that another
+  rule already routes. Use `list_rules` to see the current rules.
 
 ### Rules added at runtime
 
