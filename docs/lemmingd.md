@@ -416,7 +416,14 @@ that ultimately continue to the real server. HTTPS domains with no rule are
 tunneled without interception.
 
 Targets are written as `host:port`, `http://host:port`, or
-`https://host:port`. Without a scheme, a target on port `443` uses HTTPS and any
+`https://host:port`. The port is required even with a scheme, so write
+`https://new-origin.example.net:443`, not `https://new-origin.example.net`.
+A target is only a destination server: it cannot contain a path, query, or
+user information, and lemmingd refuses to start if it does (a single trailing
+`/` is accepted). The browser's original path and query are forwarded
+unchanged, so `https://app.example.com/api/users` with target
+`127.0.0.1:3000` requests `/api/users` from the target; lemmingd does not add
+or strip a path prefix. Without a scheme, a target on port `443` uses HTTPS and any
 other port uses HTTP. A remote target reached over plain HTTP must say
 `http://` explicitly, because the browser believes it is talking to an HTTPS
 site: its cookies, including `Secure` cookies, and credentials then cross the

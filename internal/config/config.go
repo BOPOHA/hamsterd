@@ -354,7 +354,7 @@ func ParseTarget(raw string) (Target, error) {
 	}
 	host, port, err := net.SplitHostPort(target.Address)
 	if err != nil || host == "" || port == "" || strings.ContainsAny(target.Address, "/?#@") {
-		return Target{}, errors.New("target must be host:port, http://host:port, or https://host:port")
+		return Target{}, errors.New("target must be host:port, http://host:port, or https://host:port, with an explicit port and no path; the request path is forwarded unchanged")
 	}
 	portNumber, err := strconv.Atoi(port)
 	if err != nil || portNumber < 1 || portNumber > 65535 {
