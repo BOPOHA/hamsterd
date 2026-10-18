@@ -63,7 +63,7 @@ printf '%s\n' \
 Run this in a second terminal and leave it running:
 
 ```sh
-python3 -m http.server 5173 \
+python3 -m http.server 5173 --bind 127.0.0.1 \
   --directory "$HOME/tmp/lemmingd-jekyll-demo/jekyllrb.com"
 ```
 
@@ -77,7 +77,10 @@ The response should be `HTTP/1.0 200 OK`.
 
 ## 3. Route `/css/` to the local server
 
-Save the existing configuration, if any, and replace it with this demo rule:
+Save the existing configuration, if any, and replace it with this demo rule.
+On macOS, set
+`lemming_config="$HOME/Library/Application Support/lemmingd/config.json"`
+instead of the Linux path in the first line:
 
 ```sh
 lemming_config="${XDG_CONFIG_HOME:-$HOME/.config}/lemmingd/config.json"
@@ -117,7 +120,7 @@ theme comes from your local stylesheet.
 The `lemmingd` terminal should show the intercepted asset:
 
 ```text
-route host=jekyllrb.com path=/css/screen.css target=127.0.0.1:5173
+session=7 route host=jekyllrb.com path=/css/screen.css target=127.0.0.1:5173
 ```
 
 Edit `css/screen.css` again and hard-reload the browser to iterate. To replace

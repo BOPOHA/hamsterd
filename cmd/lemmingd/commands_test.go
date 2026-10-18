@@ -51,7 +51,7 @@ func TestConfigShowAndMergeOffline(t *testing.T) {
 	if code := run([]string{"config", "-config", configPath, "merge"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("merge exit code = %d, stderr = %s", code, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "merged 1 rules") || !strings.Contains(stdout.String(), "config.json.bak") {
+	if !strings.Contains(stdout.String(), "merged 1 rule ") || !strings.Contains(stdout.String(), "config.json.bak") {
 		t.Fatalf("merge output = %q", stdout.String())
 	}
 	stdout.Reset()
@@ -124,7 +124,7 @@ func TestRunServesControlAPIAndMergesThroughIt(t *testing.T) {
 			return stop
 		}
 		var stdout, stderr bytes.Buffer
-		if code := run([]string{"config", "-config", configPath, "merge"}, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "merged 1 rules") {
+		if code := run([]string{"config", "-config", configPath, "merge"}, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "merged 1 rule ") {
 			t.Errorf("merge through the running instance = %d %q %q", code, stdout.String(), stderr.String())
 		}
 		var rules []lemming.RuleView

@@ -1,4 +1,4 @@
-.TH LEMMINGD 1 "October 2026" "lemmingd 0.3.0" "User Commands"
+.TH LEMMINGD 1 2026-10-18 "lemmingd 0.3.0" "User Commands"
 .SH NAME
 lemmingd \- selective local-development HTTP and HTTPS proxy
 .SH SYNOPSIS
@@ -29,7 +29,8 @@ mode does not trust or install it automatically.
 .PP
 The
 .B firefox
-command creates or reuses an isolated Firefox profile beside lemmingd's
+command starts lemmingd and then creates or reuses an isolated Firefox
+profile beside lemmingd's
 configuration, configures it to use lemmingd, imports the public CA with
 .BR certutil (1),
 and launches Firefox with that profile. It does not modify Firefox's default
@@ -108,6 +109,12 @@ Rules added through the control API. It can contain only rules.
 Control API address and token while lemmingd runs with
 .BR control_api .
 Readable only by the owner.
+.PP
+On macOS these files are in
+.IR "~/Library/Application Support/lemmingd/" ;
+on Windows in
+.IR %AppData%\elemmingd\e .
+Configuration files writable by the group or other users are refused.
 .TP
 .I $XDG_CONFIG_HOME/lemmingd/firefox-profile/
 Dedicated Firefox profile created by the

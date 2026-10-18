@@ -24,10 +24,12 @@
 # hamsterd: cache downloads for any tool that honours HTTPS_PROXY
 hamsterd &
 export HTTPS_PROXY=http://127.0.0.1:8080 HTTP_PROXY=http://127.0.0.1:8080
-# trust ~/.config/hamsterd/ca.crt in the client, then build as usual
+# trust hamsterd's ca.crt in the client (Linux: ~/.config/hamsterd/,
+# macOS: ~/Library/Application Support/hamsterd/), then build as usual
 
-# lemmingd: add a rule such as "app.example.com, /  ->  127.0.0.1:5173" to
-# ~/.config/lemmingd/config.json, then open the real site in an isolated Firefox
+# lemmingd: run it once to create config.json in the same kind of directory, add
+# a rule such as "app.example.com, /  ->  127.0.0.1:5173", then open the real
+# site in an isolated Firefox
 lemmingd firefox https://app.example.com/
 ```
 
@@ -136,13 +138,8 @@ Download Linux, macOS, or Windows archives (amd64 and arm64) from the
 
 ### Homebrew
 
-Starting with v0.2.0:
-
-```sh
-brew install --cask bopoha/tap/hamsterd bopoha/tap/lemmingd
-```
-
-The casks are published from each release to
+Homebrew casks (`bopoha/tap/hamsterd`, `bopoha/tap/lemmingd`) are not
+published yet. Use a release archive or `go install` until they appear in
 [`BOPOHA/homebrew-tap`](https://github.com/BOPOHA/homebrew-tap).
 
 ### Container image (hamsterd)
@@ -191,8 +188,8 @@ make build
 ./bin/lemmingd -version
 ```
 
-`make all` additionally creates Linux, macOS, and Windows amd64 release-style
-binaries in `bin/`. Dependencies are standard Go modules; `vendor/` is neither
+`make all` cleans `bin/` and then creates Linux, macOS, and Windows amd64
+release-style binaries there (`hamsterd.linux-amd64`, and so on). Dependencies are standard Go modules; `vendor/` is neither
 required nor stored in Git.
 
 Version output identifies the kind of build without empty metadata fields:
@@ -271,12 +268,19 @@ Common options:
 | JSON field | Meaning |
 | --- | --- |
 | `version` | Configuration format; currently `1`. |
-| `listen` | Proxy address. Defaults to `127.0.0.1:8080` or `127.0.0.1:18080`. |
+| `listen` | Required proxy address. New configurations are created with `127.0.0.1:8080` (hamsterd) or `127.0.0.1:18080` (lemmingd); `-listen` overrides it, but the file must still be valid. |
 | `allow_remote_clients` | Required before a non-loopback listen address is accepted. It refuses loopback, link-local, and metadata destinations and limits `CONNECT` ports, but does not provide authentication. |
 | `allowed_connect_ports` | With `allow_remote_clients`: `CONNECT` ports that clients may use. Defaults to `[443]`. |
 | `domains` | `hamsterd` only: exact hostnames to intercept and cache; an empty or omitted list means all hosts. |
 | `allow_remote_targets` | `lemmingd` only: permits routing to non-loopback targets. Remote plain-HTTP targets must be written as `http://host:port`. |
 | `control_api` | `lemmingd` only: enables the loopback control API used by `lemmingd mcp`. Off by default. |
+
+Configuration files, including lemmingd's `rules.auto.json`, that are writable
+by the group or by other users are refused; fix them with `chmod go-w FILE`.
+Each configuration is created on first start in the user configuration
+directory: `~/.config/<name>/` on Linux (or below `XDG_CONFIG_HOME`),
+`~/Library/Application Support/<name>/` on macOS, and `%AppData%\<name>\` on
+Windows.
 
 Command-line options override paths or the listen address. The Firefox launcher
 is `lemmingd firefox [options] URL`; its two Firefox-specific options are
@@ -331,6 +335,8 @@ sha256sum --ignore-missing -c checksums.txt
 gh attestation verify hamsterd_0.2.0_linux_amd64.tar.gz --repo BOPOHA/hamsterd
 gh attestation verify oci://ghcr.io/bopoha/hamsterd:v0.2.0 --repo BOPOHA/hamsterd
 ```
+
+On macOS without `sha256sum`, use `shasum -a 256 --ignore-missing -c checksums.txt`.
 
 ## Development
 

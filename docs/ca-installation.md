@@ -18,9 +18,10 @@ The default public certificate paths are:
 | macOS | `~/Library/Application Support/lemmingd/ca.crt` |
 | Windows | `%AppData%\lemmingd\ca.crt` |
 
-Replace `lemmingd` with `hamsterd` for that proxy. The startup log always shows
-the effective path, including when a command-line override is used. You can
-also download the public certificate while the proxy is running:
+Replace `lemmingd` with `hamsterd` for that proxy. The startup log shows the
+path when the CA is first created; with `-cacert`, the certificate is at the
+path you passed. You can also download the public certificate while the proxy
+is running:
 
 ```sh
 curl -o lemmingd-ca.crt http://127.0.0.1:18080/ca.crt
@@ -31,7 +32,8 @@ The adjacent `ca.key` file is the private signing key. **Never import, copy,
 publish, or share `ca.key`.**
 
 Before trusting a certificate, inspect its subject and fingerprint. Set
-`CA_CERT` to the actual path printed by the proxy:
+`CA_CERT` to the certificate path from the table above, or to your `-cacert`
+value:
 
 ```sh
 CA_CERT="${XDG_CONFIG_HOME:-$HOME/.config}/lemmingd/ca.crt"
@@ -232,8 +234,8 @@ Keep the displayed thumbprint. Remove that exact certificate later with:
 Remove-Item "Cert:\CurrentUser\Root\PASTE_THUMBPRINT_HERE"
 ```
 
-Replace `lemmingd` with `hamsterd` for the other proxy, or use the path printed
-by the proxy if it was overridden.
+Replace `lemmingd` with `hamsterd` for the other proxy, or use the path you
+passed with `-cacert`.
 
 ## Configure the browser's proxy
 

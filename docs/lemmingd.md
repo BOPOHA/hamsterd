@@ -32,8 +32,10 @@ preview environment, or a deployment.
    ```
 
    If `XDG_CONFIG_HOME` is set, the file is under
-   `$XDG_CONFIG_HOME/lemmingd/` instead. These are Linux paths; on other
-   platforms, use the path printed in the startup log.
+   `$XDG_CONFIG_HOME/lemmingd/` instead. On macOS it is
+   `~/Library/Application Support/lemmingd/config.json`, and on Windows
+   `%AppData%\lemmingd\config.json`. The path is logged when the file is first
+   created.
 
 3. Start the local frontend, for example:
 
@@ -218,10 +220,10 @@ curl --proxy http://127.0.0.1:18080 \
   -I https://example.com/
 ```
 
-The `lemmingd` terminal logs every request that it routes locally:
+The `lemmingd` terminal logs every request that a rule routes to its target:
 
 ```text
-route host=example.com path=/ target=127.0.0.1:5173
+session=3 route host=example.com path=/ target=127.0.0.1:5173
 ```
 
 If no route line appears, check the browser's proxy settings, domain, and path
@@ -420,7 +422,7 @@ Targets are written as `host:port`, `http://host:port`, or
 `https://new-origin.example.net:443`, not `https://new-origin.example.net`.
 A target is only a destination server: it cannot contain a path, query, or
 user information, and lemmingd refuses to start if it does (a single trailing
-`/` is accepted). The browser's original path and query are forwarded
+`/` is accepted after an `http://` or `https://` target). The browser's original path and query are forwarded
 unchanged, so `https://app.example.com/api/users` with target
 `127.0.0.1:3000` requests `/api/users` from the target; lemmingd does not add
 or strip a path prefix. Without a scheme, a target on port `443` uses HTTPS and any
@@ -500,7 +502,7 @@ proxy restarts. It provides these tools:
 | `status` | Proxy address for browsers, version, CA certificate file and fingerprint, remote-access settings, rule counts |
 | `list_rules` | All rules in order, with `source` `config` (from `config.json`) or `auto` |
 | `test_route` | Whether a URL is intercepted, and whether a local target or the real server answers, with the exact target URL |
-| `recent_requests` | Recent requests to rule domains and plain HTTP requests, newest first, with the target that served them; tunneled HTTPS to other domains is not visible, and query strings are not recorded |
+| `recent_requests` | Recent requests to rule domains and plain HTTP requests, newest first, with the target that served them; tunneled HTTPS to other domains is not visible, and query strings are not recorded; keeps the last 200 and returns 50 by default (`limit` 1-200) |
 | `add_rule` | Add a rule; it applies immediately and is saved |
 | `remove_rule` | Remove a rule added with `add_rule`, by one of its domains |
 
@@ -594,7 +596,9 @@ args = ["mcp"]
 
 Rules added through the control API are stored in `rules.auto.json` next to
 `config.json`, following the idea of PostgreSQL's `postgresql.auto.conf`:
-`config.json` stays yours and is never rewritten by the API. The effective rules
+`config.json` stays yours: the MCP tools never write it, and only
+`lemmingd config merge` rewrites it, in canonical JSON form without your
+formatting or legacy field names, keeping the original as `config.json.bak`. The effective rules
 are the `config.json` rules followed by the `rules.auto.json` rules, and a
 domain may appear in only one of them. `rules.auto.json` can contain only rules,
 so neither an agent nor anything that writes that file can change `listen`,
@@ -668,7 +672,8 @@ through DNS rebinding or cross-site requests. The API never exposes `ca.key`.
   `lemmingd config merge` with a running instance; it is off by default.
 - Keep the listener on `127.0.0.1`. Setting `allow_remote_clients` does not add
   authentication. It refuses loopback, link-local, and metadata destinations
-  other than the configured targets, accepts `CONNECT` only to port `443` or to
+  other than the targets of the current rules, including rules added through
+  the control API, accepts `CONNECT` only to port `443` or to
   the ports in `allowed_connect_ports`, and closes tunnels that are idle for 15
   minutes.
 - Trust `ca.crt` only in clients intentionally using this proxy.

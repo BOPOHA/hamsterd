@@ -34,8 +34,9 @@ data, and remove the dedicated profile when it is no longer needed.
 
 Authenticated, cookie-bearing, token-bearing, ranged, private, and otherwise
 ambiguous responses are excluded from `hamsterd`'s cache. Cache and key files
-are private to the operating-system user by default, and configuration files
-writable by other users are refused.
+are private to the operating-system user by default, and configuration files,
+including lemmingd's `rules.auto.json`, that are writable by the group or other
+users are refused.
 
 ## Certificate authority scope
 
@@ -80,8 +81,8 @@ one before using the proxy again.
 
 ## Historical CA warning
 
-Releases derived from the old `master` and `dev` branches included three public
-CA private keys: the early hamsterd CA, the early lemmingd CA, and the bundled
+Releases built from the pre-0.1.1 `master` and `dev` branches of 2022 included
+three public CA private keys: the early hamsterd CA, the early lemmingd CA, and the bundled
 go-httpproxy CA. Remove all historical hamsterd and lemmingd CAs from trust
 stores. New versions recognize and reject all three certificates rather than
 silently reusing them.

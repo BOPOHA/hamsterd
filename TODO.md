@@ -72,7 +72,7 @@ CI/CD artifacts.
 ### hamsterd
 
 - [ ] Cache administration commands (`hamsterd cache list|purge|stats`) on top
-      of the same control API.
+      of a hamsterd control API like lemmingd's (see AI agents below).
 - [ ] Optional refusal of private-network (RFC 1918, ULA) destinations for
       deployments that do not need internal mirrors.
 - [ ] A configurable connection limit and remote-mode idle timeout.

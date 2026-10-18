@@ -20,7 +20,7 @@ License: MIT
 
 - Go: `go install github.com/BOPOHA/hamsterd/cmd/hamsterd@latest` and `go install github.com/BOPOHA/hamsterd/cmd/lemmingd@latest` (Go 1.26 or newer).
 - Release archives for Linux, macOS, and Windows (amd64, arm64): https://github.com/BOPOHA/hamsterd/releases/latest
-- Homebrew: `brew install --cask bopoha/tap/hamsterd bopoha/tap/lemmingd`
+- Homebrew casks (`bopoha/tap/hamsterd`, `bopoha/tap/lemmingd`) are planned but not published yet.
 - Container (hamsterd shared cache): `ghcr.io/bopoha/hamsterd`, state volume `/var/lib/hamsterd`, configuration `/etc/hamsterd/config.json`; see [Run in a container](https://github.com/BOPOHA/hamsterd/blob/main/docs/hamsterd.md#run-in-a-container) and [Compose example](https://github.com/BOPOHA/hamsterd/blob/main/examples/docker-compose.yml)
 - Fedora, EPEL 10, Amazon Linux 2023: `sudo dnf copr enable vorona/hamsterd && sudo dnf install hamsterd lemmingd`
 
@@ -52,9 +52,9 @@ License: MIT
 - `cmd/hamsterd/`: hamsterd executable
 - `cmd/lemmingd/`: lemmingd executable
 - `internal/`: shared and program-specific implementation packages
-- `examples/`: example JSON configurations
+- `examples/`: example JSON configurations and a Compose file
 - `docs/`: user guides, walkthroughs, and manual pages
-- `packaging/`: RPM packaging
+- `packaging/`: RPM spec and container image (`packaging/container/`)
 
 ## Optional
 

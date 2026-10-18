@@ -22,6 +22,11 @@ usually cloned from GitHub. Git's smart HTTP exchange uses requests that
 Start `hamsterd` once, then stop it with `Ctrl+C`. This creates its unique CA
 and `$HOME/.config/hamsterd/config.json` on Linux.
 
+This walkthrough uses Linux paths. On macOS, use
+`~/Library/Application Support/hamsterd/` instead of
+`${XDG_CONFIG_HOME:-$HOME/.config}/hamsterd/` and `~/Library/Caches/hamsterd`
+instead of `${XDG_CACHE_HOME:-$HOME/.cache}/hamsterd`.
+
 Replace that configuration with:
 
 ```json

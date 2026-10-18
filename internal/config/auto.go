@@ -143,10 +143,16 @@ func MergeAutoRules(configPath string) (int, error) {
 	if err := ValidateRules(cfg.Rules, cfg.AllowRemoteTargets); err != nil {
 		return 0, fmt.Errorf("merged configuration is invalid: %w", err)
 	}
+	merged, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return 0, fmt.Errorf("encode merged config: %w", err)
+	}
 	if err := writePrivateFile(configPath+".bak", data); err != nil {
 		return 0, fmt.Errorf("back up config: %w", err)
 	}
-	if err := writeConfig(configPath, cfg); err != nil {
+	// Unlike writeConfig for a new file, do not change the permissions of
+	// the directory, which -config may point to.
+	if err := writePrivateFile(configPath, append(merged, '\n')); err != nil {
 		return 0, err
 	}
 	if err := WriteAutoRules(autoPath, nil); err != nil {

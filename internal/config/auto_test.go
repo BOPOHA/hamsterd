@@ -91,6 +91,9 @@ func TestMergeAutoRules(t *testing.T) {
 	configPath := filepath.Join(dir, "config.json")
 	original := `{"version":1,"listen":"127.0.0.1:18080","rules":[{"target":"127.0.0.1:3000","domains":["api.example"],"include_paths":["/"]}]}`
 	writeTestFile(t, configPath, original)
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if merged, err := MergeAutoRules(configPath); err != nil || merged != 0 {
 		t.Fatalf("merge without auto rules = (%d, %v)", merged, err)
 	}
@@ -110,6 +113,11 @@ func TestMergeAutoRules(t *testing.T) {
 	}
 	if _, err := os.Stat(AutoRulesPath(configPath)); !os.IsNotExist(err) {
 		t.Fatalf("auto rules file remains: %v", err)
+	}
+	if runtime.GOOS != "windows" {
+		if info, err := os.Stat(dir); err != nil || info.Mode().Perm() != 0o755 {
+			t.Fatalf("merge changed the directory permissions: %v %v", info.Mode(), err)
+		}
 	}
 	data, _ := os.ReadFile(configPath)
 	if strings.Contains(string(data), `"cache"`) {

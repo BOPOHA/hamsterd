@@ -45,13 +45,18 @@ proxy.
 
 4. Run the build or download normally. Inspect the `X-Hamsterd-Cache` response
    header or the `hamsterd` log to see `MISS`, `HIT`, `STALE`, or `BYPASS`.
+   Requests to hosts outside `domains`, and failed upstream requests, carry no
+   `X-Hamsterd-Cache` header, and the log shows an empty `cache=`. Every proxied
+   response also carries `X-Hamsterd-Session`, which matches `session=` in the
+   log.
 
 For HTTPS, the log also reports `action=intercept` for allowlisted connections
 and `action=tunnel` for other connections. A tunnel preserves end-to-end TLS,
 so `hamsterd` can log its hostname but cannot see individual request paths.
 
-Opening `http://127.0.0.1:8080/` directly only shows the status page; it does
-not configure the browser or operating system.
+Opening `http://127.0.0.1:8080/` directly only shows a status page; it does
+not configure the browser or operating system. The same listener also serves
+the public CA certificate at `/ca.crt` and returns `ok` at `/healthz`.
 
 ## Quick command-line test
 
@@ -112,7 +117,9 @@ export no_proxy="$NO_PROXY"
 
 These variables select the proxy; they do not make the client trust its CA.
 Install the CA in the relevant trust store or configure the individual tool to
-use `~/.config/hamsterd/ca.crt`. Do not disable TLS verification.
+use hamsterd's `ca.crt` (see
+[Installing the local CA](ca-installation.md#choose-the-correct-certificate) for
+the path on each platform). Do not disable TLS verification.
 
 Unset the variables when finished:
 
@@ -217,15 +224,25 @@ your own configuration with an exact `domains` list at
 [`examples/hamsterd-shared.json`](../examples/hamsterd-shared.json). A
 [Compose file](../examples/docker-compose.yml) shows both.
 
+A mounted configuration file must be readable by user `65532` and must not be
+writable by the group or other users, for example `chmod 644 hamsterd-shared.json`.
+Keep `"cache": {"directory": "/var/lib/hamsterd/cache", ...}` in it: without that
+setting the cache is written outside the volume and is lost when the container
+is recreated.
+
 The `/var/lib/hamsterd` volume holds `ca.key`, `ca.crt`, and the cache. Keep
 it private and back it up together with the clients' trust of `ca.crt`. A bind
-mount must be writable by user `65532`.
+mount must be writable by user `65532`. Clients can download the public CA with
+`curl -o hamsterd-ca.crt http://192.168.10.5:8080/ca.crt`. That download is
+plain HTTP, so before trusting it compare its fingerprint
+(`openssl x509 -noout -fingerprint -sha256 -in hamsterd-ca.crt`) with the file
+copied by `docker cp`. `GET /healthz` returns `ok` for monitoring.
 
 If an internal mirror uses a private CA, mount its certificate and point Go's
 verifier at it, for example
 `-v ./corp-ca.pem:/etc/ssl/corp-ca.pem:ro -e SSL_CERT_FILE=/etc/ssl/corp-ca.pem`.
-`SSL_CERT_FILE` replaces the default bundle, so include public roots in that
-file if public hosts are also proxied.
+Go then reads that file in addition to the public roots in `/etc/ssl/certs`; to
+replace the public roots entirely, also set `SSL_CERT_DIR`.
 
 Verify the image provenance with:
 
@@ -249,7 +266,7 @@ requests containing:
 
 - `Authorization`, `Proxy-Authorization`, `Cookie`, or `Range` headers;
 - headers that commonly carry credentials: any header name containing `auth`,
-  `token`, `api-key`, `apikey`, `secret`, `password`, `credential`, `session`,
+  `token`, `api-key`, `apikey`, `api_key`, `secret`, `password`, `credential`, `session`,
   or `signature`, as well as `X-JFrog-Art-Api`, `Metadata`, and
   `Metadata-Flavor`;
 - `Cache-Control: no-cache` or `Cache-Control: no-store`;
@@ -288,8 +305,12 @@ The default file is:
 ~/.config/hamsterd/config.json
 ```
 
-If `XDG_CONFIG_HOME` is set, it is stored below that directory instead. These
-are Linux paths; on other platforms, use the path printed in the startup log.
+If `XDG_CONFIG_HOME` is set, it is stored below that directory instead. On
+macOS the configuration and CA files are in
+`~/Library/Application Support/hamsterd/` and the cache in
+`~/Library/Caches/hamsterd/`; on Windows they are in `%AppData%\hamsterd\` and
+`%LocalAppData%\hamsterd\`. The paths are logged when the files are first
+created.
 A typical configuration is:
 
 ```json
@@ -312,7 +333,8 @@ empty list preserves the default behavior of caching and intercepting all
 hosts.
 
 An empty `directory` uses `~/.cache/hamsterd/`, or the equivalent below
-`XDG_CACHE_HOME`. The directory must be dedicated to `hamsterd`: it is made
+`XDG_CACHE_HOME` (macOS: `~/Library/Caches/hamsterd/`, Windows:
+`%LocalAppData%\hamsterd\`). The directory must be dedicated to `hamsterd`: it is made
 private, and startup refuses a directory that contains other files.
 `max_size_mib` limits the complete cache, including stored response headers,
 and least-recently used entries are removed when necessary. Downloads in
@@ -342,7 +364,7 @@ Restart `hamsterd` after editing its configuration.
   honors the proxy variables and uses the trust store in which the CA was
   installed.
 - **The proxy page works but downloads do not use it:** direct access to port
-  `8080` is only a health check. The downloading client still needs proxy
+  `8080` only serves a status page, `/ca.crt`, and `/healthz`. The downloading client still needs proxy
   configuration.
 
 ## Security boundaries

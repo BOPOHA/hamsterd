@@ -152,6 +152,10 @@ func mergeConfig(configPath string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "no rules in %s; nothing to merge\n", config.AutoRulesPath(configPath))
 		return 0
 	}
-	fmt.Fprintf(stdout, "merged %d rules into %s; previous version saved as %s\n", result.Merged, result.ConfigFile, result.Backup)
+	noun := "rules"
+	if result.Merged == 1 {
+		noun = "rule"
+	}
+	fmt.Fprintf(stdout, "merged %d %s into %s; previous version saved as %s\n", result.Merged, noun, result.ConfigFile, result.Backup)
 	return 0
 }

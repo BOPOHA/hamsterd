@@ -17,6 +17,8 @@ services:
       - hamsterd-state:/var/lib/hamsterd
       # Optional: replace the image's default configuration, for example to
       # set an exact "domains" allowlist (see examples/hamsterd-shared.json).
+      # The file must be readable by uid 65532 and not writable by the group
+      # or others: chmod 644 hamsterd-shared.json
       # - ./hamsterd-shared.json:/etc/hamsterd/config.json:ro
 
 volumes:
