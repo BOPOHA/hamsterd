@@ -11,9 +11,14 @@ Set Theme "Catppuccin Mocha"
 Hide
 Type `export D=$(mktemp -d) U=https://releases.hashicorp.com/terraform-provider-aws/5.70.0/terraform-provider-aws_5.70.0_linux_amd64.zip`
 Enter
+Sleep 500ms
 Type `printf '{"version":1,"listen":"127.0.0.1:18081","cache":{"directory":"%s/cache","max_size_mib":512,"max_object_mib":256,"default_ttl":"1h"}}' "$D" > "$D/config.json" && chmod 600 "$D/config.json"`
 Enter
-Type `./bin/hamsterd -config "$D/config.json" -cacert "$D/ca.crt" -cakey "$D/ca.key" 2>"$D/log" & sleep 1; clear`
+Sleep 500ms
+Type `./bin/hamsterd -config "$D/config.json" -cacert "$D/ca.crt" -cakey "$D/ca.key" 2>"$D/log" &`
+Enter
+Sleep 2s
+Type "clear"
 Enter
 Sleep 1s
 Show

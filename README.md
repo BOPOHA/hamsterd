@@ -14,10 +14,11 @@
   real site's HTTPS URL, while every other path keeps using the real server.
   There is no build, deployment, or preview environment.
 
-<!--
-Demo recordings: run `make demo` (requires https://github.com/charmbracelet/vhs)
-and add docs/demo/hamsterd.gif and docs/demo/lemmingd.gif here.
--->
+| hamsterd: the second download comes from the cache | lemmingd: the same HTTPS URL, served by a local server |
+| --- | --- |
+| ![hamsterd demo: a 139 MB download as a cache MISS, then a HIT](docs/demo/hamsterd.gif) | ![lemmingd demo: example.com fetched directly, then through lemmingd from localhost](docs/demo/lemmingd.gif) |
+
+<sub>Recorded with `make demo` ([VHS](https://github.com/charmbracelet/vhs)) on a fast link; on a typical office or CI connection, the first download takes much longer.</sub>
 
 ```sh
 # hamsterd: cache downloads for any tool that honours HTTPS_PROXY

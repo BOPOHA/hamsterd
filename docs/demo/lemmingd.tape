@@ -11,11 +11,17 @@ Set Theme "Catppuccin Mocha"
 Hide
 Type `export D=$(mktemp -d)`
 Enter
-Type `python3 -m http.server 19900 --bind 127.0.0.1 --directory docs/demo/site >/dev/null 2>&1 & sleep 1`
+Sleep 500ms
+Type `python3 -m http.server 19900 --bind 127.0.0.1 --directory docs/demo/site >/dev/null 2>&1 &`
 Enter
+Sleep 2s
 Type `printf '{"version":1,"listen":"127.0.0.1:18082","rules":[{"target":"127.0.0.1:19900","domains":["example.com"],"include_paths":["/"]}]}' > "$D/config.json" && chmod 600 "$D/config.json"`
 Enter
-Type `./bin/lemmingd -config "$D/config.json" -cacert "$D/ca.crt" -cakey "$D/ca.key" 2>"$D/log" & sleep 1; clear`
+Sleep 500ms
+Type `./bin/lemmingd -config "$D/config.json" -cacert "$D/ca.crt" -cakey "$D/ca.key" 2>"$D/log" &`
+Enter
+Sleep 2s
+Type "clear"
 Enter
 Sleep 1s
 Show
