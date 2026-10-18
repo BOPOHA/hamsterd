@@ -147,7 +147,7 @@ func prepareAndLaunch(config Config, runner commandRunner) error {
 	}
 	keepLease = true
 	go func() {
-		<-command.exited
+		<-command.exited //nolint:errcheck // only startup exit status is reported
 		removeExitedLease(config.Profile, lease)
 	}()
 	return nil
@@ -158,7 +158,7 @@ func stopCommand(command startedCommand) error {
 	if killErr != nil && !errors.Is(killErr, os.ErrProcessDone) {
 		return fmt.Errorf("stop Firefox after launch failure: %w", killErr)
 	}
-	<-command.exited
+	<-command.exited //nolint:errcheck // a killed process always exits with an error
 	return nil
 }
 

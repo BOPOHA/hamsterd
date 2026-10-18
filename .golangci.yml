@@ -1,0 +1,13 @@
+version: "2"
+
+linters:
+  exclusions:
+    # Ignore unchecked errors from best-effort cleanup (Close, os.Remove) and
+    # diagnostic output (fmt.Fprint*), where nothing useful can be done.
+    presets:
+      - std-error-handling
+    rules:
+      # Firefox is a proper noun at the start of several error messages.
+      - path: internal/firefox/
+        text: "ST1005:"
+        linters: [staticcheck]

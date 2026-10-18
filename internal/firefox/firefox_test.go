@@ -166,7 +166,7 @@ func TestAcquireProfileLeaseReplacesStaleLease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer lease.remove()
+	defer func() { _ = lease.remove() }()
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -187,7 +187,7 @@ func TestAcquireProfileLeaseReplacesPriorRunningLease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer lease.remove()
+	defer func() { _ = lease.remove() }()
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -226,7 +226,7 @@ func TestExitedLeaseCleanupDoesNotRaceProfilePreparation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer preparation.remove()
+	defer func() { _ = preparation.remove() }()
 
 	path := filepath.Join(profile, launcherLockName)
 	const replacement = "preparing 12345 replacement-token\n"
