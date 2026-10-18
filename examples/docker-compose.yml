@@ -1,0 +1,23 @@
+# Shared hamsterd cache for a trusted team network.
+#
+#   docker compose -f examples/docker-compose.yml up -d
+#   docker compose -f examples/docker-compose.yml cp hamsterd:/var/lib/hamsterd/ca.crt ./hamsterd-ca.crt
+#
+# Clients then use HTTPS_PROXY=http://<this-host>:8080 and trust hamsterd-ca.crt.
+# There is no client authentication: restrict port 8080 with firewall rules.
+services:
+  hamsterd:
+    image: ghcr.io/bopoha/hamsterd:latest
+    restart: unless-stopped
+    ports:
+      # Bind to the office or lab interface, not to every address.
+      - "192.168.10.5:8080:8080"
+    volumes:
+      # CA key, certificate, and cache. Keep this volume private.
+      - hamsterd-state:/var/lib/hamsterd
+      # Optional: replace the image's default configuration, for example to
+      # set an exact "domains" allowlist (see examples/hamsterd-shared.json).
+      # - ./hamsterd-shared.json:/etc/hamsterd/config.json:ro
+
+volumes:
+  hamsterd-state:

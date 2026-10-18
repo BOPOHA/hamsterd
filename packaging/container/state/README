@@ -1,0 +1,2 @@
+Placeholder so that the image creates /var/lib/hamsterd owned by the nonroot
+user. hamsterd stores ca.crt, ca.key, and cache/ here.

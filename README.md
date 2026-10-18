@@ -1,21 +1,46 @@
 # hamsterd and lemmingd
 
-This repository contains two focused HTTP/HTTPS development proxies:
-`hamsterd` downloads an eligible public artifact once and reuses it across
-builds or development machines; `lemmingd` routes selected parts of a real
-site to a local server or alternate host under the site's real HTTPS URL.
+[![CI](https://github.com/BOPOHA/hamsterd/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/BOPOHA/hamsterd/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/BOPOHA/hamsterd)](https://github.com/BOPOHA/hamsterd/releases/latest)
+[![Go Report Card](https://goreportcard.com/badge/github.com/BOPOHA/hamsterd)](https://goreportcard.com/report/github.com/BOPOHA/hamsterd)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-They share secure proxy, configuration, and certificate-authority
-infrastructure, but they have different jobs:
+**Two small, single-binary HTTPS development proxies:**
+
+- **`hamsterd`** downloads a build artifact once and serves it from cache to
+  every later build, container, CI runner, or team machine. A Terragrunt run
+  went from **2m 5.8s to 21.4s**, almost six times faster.
+- **`lemmingd`** serves your local `npm run dev` frontend, API, or mock under a
+  real site's HTTPS URL, while every other path keeps using the real server.
+  There is no build, deployment, or preview environment.
+
+<!--
+Demo recordings: run `make demo` (requires https://github.com/charmbracelet/vhs)
+and add docs/demo/hamsterd.gif and docs/demo/lemmingd.gif here.
+-->
+
+```sh
+# hamsterd: cache downloads for any tool that honours HTTPS_PROXY
+hamsterd &
+export HTTPS_PROXY=http://127.0.0.1:8080 HTTP_PROXY=http://127.0.0.1:8080
+# trust ~/.config/hamsterd/ca.crt in the client, then build as usual
+
+# lemmingd: add a rule such as "app.example.com, /  ->  127.0.0.1:5173" to
+# ~/.config/lemmingd/config.json, then open the real site in an isolated Firefox
+lemmingd firefox https://app.example.com/
+```
+
+Both listen on loopback by default and generate a unique local CA on first
+start, which they never install into a system trust store. HTTPS stays verified
+upstream, and only explicitly configured hosts or all hosts (hamsterd's choice)
+are intercepted.
 
 | Command | Purpose | HTTPS behavior |
 | --- | --- | --- |
 | `hamsterd` | Download once; reuse across builds, ephemeral environments, or a controlled development network. | Intercepts all HTTPS hosts by default, or only an optional exact-host allowlist. |
 | `lemmingd` | Replace selected routes of a real site with a local frontend, API, mock, asset server, or alternate hosting origin. | Intercepts configured domains only; other CONNECT traffic is tunneled unchanged. |
 
-Both commands listen on loopback by default and generate a unique local CA on
-first start. Normal server mode never installs it into a trust store. The
-optional `lemmingd firefox` command imports the public CA only into its
+The optional `lemmingd firefox` command imports the public CA only into its
 dedicated Firefox profile.
 
 ## What they solve
@@ -90,7 +115,50 @@ interactive browser session.
 - Firefox and Mozilla NSS `certutil` only when using `lemmingd firefox`
 - `rpkg`, `rpmbuild`, and `mock` only when building RPMs
 
-## Install from COPR
+## Install
+
+### Go
+
+```sh
+go install github.com/BOPOHA/hamsterd/cmd/hamsterd@latest
+go install github.com/BOPOHA/hamsterd/cmd/lemmingd@latest
+```
+
+`go install` builds from source with your Go toolchain (Go 1.26 or newer) and
+reports the module version, such as `hamsterd v0.2.0`.
+
+### Release archives
+
+Download Linux, macOS, or Windows archives (amd64 and arm64) from the
+[latest release](https://github.com/BOPOHA/hamsterd/releases/latest), then
+[verify them](#verify-a-release-download).
+
+### Homebrew
+
+Starting with v0.2.0:
+
+```sh
+brew install --cask bopoha/tap/hamsterd bopoha/tap/lemmingd
+```
+
+The casks are published from each release to
+[`BOPOHA/homebrew-tap`](https://github.com/BOPOHA/homebrew-tap).
+
+### Container image (hamsterd)
+
+Starting with v0.2.0:
+
+```sh
+docker run -d -p 192.168.10.5:8080:8080 -v hamsterd-state:/var/lib/hamsterd \
+  ghcr.io/bopoha/hamsterd:latest
+```
+
+The image is meant for a shared cache on a trusted network; see
+[Run in a container](docs/hamsterd.md#run-in-a-container) and the
+[Compose example](examples/docker-compose.yml). `lemmingd` routes to servers on
+the developer's own machine, so it is not packaged as an image.
+
+### Fedora, EPEL, and Amazon Linux (COPR)
 
 Ready-made `hamsterd` and `lemmingd` RPM packages are available from the
 unofficial [`vorona/hamsterd`](https://copr.fedorainfracloud.org/coprs/vorona/hamsterd/)
@@ -231,11 +299,13 @@ See [SECURITY.md](SECURITY.md) for the security model and reporting guidance.
 ## Verify a release download
 
 Release archives have SHA-256 checksums, SPDX SBOMs, and GitHub build
-provenance attestations:
+provenance attestations; the container image has a provenance attestation and
+an SBOM:
 
 ```sh
 sha256sum --ignore-missing -c checksums.txt
 gh attestation verify hamsterd_0.2.0_linux_amd64.tar.gz --repo BOPOHA/hamsterd
+gh attestation verify oci://ghcr.io/bopoha/hamsterd:v0.2.0 --repo BOPOHA/hamsterd
 ```
 
 ## Development

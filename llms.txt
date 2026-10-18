@@ -16,6 +16,14 @@ License: MIT
 - [Security policy](https://github.com/BOPOHA/hamsterd/blob/main/SECURITY.md): threat model and vulnerability reporting
 - [Example configurations](https://github.com/BOPOHA/hamsterd/tree/main/examples): ready-to-edit JSON configurations, including an anonymized multi-rule lemmingd setup based on real development use
 
+## Install
+
+- Go: `go install github.com/BOPOHA/hamsterd/cmd/hamsterd@latest` and `go install github.com/BOPOHA/hamsterd/cmd/lemmingd@latest` (Go 1.26 or newer).
+- Release archives for Linux, macOS, and Windows (amd64, arm64): https://github.com/BOPOHA/hamsterd/releases/latest
+- Homebrew: `brew install --cask bopoha/tap/hamsterd bopoha/tap/lemmingd`
+- Container (hamsterd shared cache): `ghcr.io/bopoha/hamsterd`, state volume `/var/lib/hamsterd`, configuration `/etc/hamsterd/config.json`; see [Run in a container](https://github.com/BOPOHA/hamsterd/blob/main/docs/hamsterd.md#run-in-a-container) and [Compose example](https://github.com/BOPOHA/hamsterd/blob/main/examples/docker-compose.yml)
+- Fedora, EPEL 10, Amazon Linux 2023: `sudo dnf copr enable vorona/hamsterd && sudo dnf install hamsterd lemmingd`
+
 ## Key facts
 
 - Both programs are forward proxies and listen only on loopback by default. lemmingd is a developer-workstation tool; hamsterd can also run as a shared cache for a trusted team network with `allow_remote_clients`, which refuses loopback, link-local, and metadata destinations and limits CONNECT to port 443 (configurable with `allowed_connect_ports`) but adds no authentication.

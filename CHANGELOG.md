@@ -48,13 +48,27 @@ versioning while the project remains below version 1.0.
   Dependabot and SPDX SBOMs covered by provenance attestations; test the
   minimum Go version.
 
+### Added
+
+- Multi-architecture `ghcr.io/bopoha/hamsterd` container image for shared
+  caches, with an SBOM and a provenance attestation, plus Compose and shared
+  configuration examples.
+- Homebrew casks for both commands, published to `BOPOHA/homebrew-tap` when
+  the release workflow has a `HOMEBREW_TAP_TOKEN` secret.
+- Manual pages in the release archives.
+- `go install` builds report the module version instead of `dev`.
+- README install section and VHS scripts for demo recordings (`make demo`).
+
 ### Changed
 
 - hamsterd caches an index in memory instead of scanning the cache directory
   after every stored response.
 - Browser disconnects during TLS handshakes are no longer logged.
 
-## [0.1.4] - 2026-10-09
+## [0.1.4] - 2026-10-09 [WITHDRAWN]
+
+Withdrawn: built with a `golang.org/x/net` version that has known HTTP/2
+vulnerabilities. Use 0.2.0.
 
 - Run golangci-lint in CI and document locking and quoting invariants.
 - Wait for Firefox cleanup in tests.

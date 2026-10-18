@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "listen": "0.0.0.0:8080",
+  "allow_remote_clients": true,
+  "allowed_connect_ports": [443],
+  "domains": [
+    "registry.terraform.io",
+    "releases.hashicorp.com",
+    "objects.githubusercontent.com",
+    "release-assets.githubusercontent.com"
+  ],
+  "cache": {
+    "directory": "/var/lib/hamsterd/cache",
+    "max_size_mib": 10240,
+    "max_object_mib": 2048,
+    "default_ttl": "1h"
+  }
+}

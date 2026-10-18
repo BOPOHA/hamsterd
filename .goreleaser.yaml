@@ -37,7 +37,7 @@ archives:
       - goos: windows
         formats: [zip]
     name_template: "hamsterd_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    files: [LICENSE, README.md, SECURITY.md]
+    files: [LICENSE, README.md, SECURITY.md, docs/hamsterd.1]
 
   - id: lemmingd
     ids: [lemmingd]
@@ -46,7 +46,7 @@ archives:
       - goos: windows
         formats: [zip]
     name_template: "lemmingd_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    files: [LICENSE, README.md, SECURITY.md]
+    files: [LICENSE, README.md, SECURITY.md, docs/lemmingd.1]
 
 checksum:
   name_template: checksums.txt
@@ -56,6 +56,74 @@ sboms:
     artifacts: archive
     documents:
       - "{{ .ArtifactName }}.sbom.json"
+
+dockers_v2:
+  - id: hamsterd
+    ids: [hamsterd]
+    dockerfile: packaging/container/Dockerfile
+    extra_files:
+      - packaging/container/config.json
+      - packaging/container/state
+    images:
+      - ghcr.io/bopoha/hamsterd
+    tags:
+      - "v{{ .Version }}"
+      - "{{ if not .Prerelease }}latest{{ end }}"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    labels:
+      org.opencontainers.image.title: hamsterd
+      org.opencontainers.image.description: Caching HTTP and HTTPS proxy for build downloads
+      org.opencontainers.image.source: https://github.com/BOPOHA/hamsterd
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.licenses: MIT
+    sbom: true
+
+# Casks are published to BOPOHA/homebrew-tap only when the release workflow
+# has a HOMEBREW_TAP_TOKEN secret; otherwise this step is skipped.
+homebrew_casks:
+  - name: hamsterd
+    ids: [hamsterd]
+    binaries: [hamsterd]
+    manpages: [docs/hamsterd.1]
+    description: Caching HTTP and HTTPS proxy that downloads build artifacts once
+    homepage: https://github.com/BOPOHA/hamsterd
+    repository: &tap
+      owner: BOPOHA
+      name: homebrew-tap
+      branch: main
+      token: '{{ envOrDefault "HOMEBREW_TAP_TOKEN" "" }}'
+    directory: Casks
+    commit_author: &author
+      name: Anatolii Vorona
+      email: vorona.tolik@gmail.com
+    skip_upload: '{{ if eq (envOrDefault "HOMEBREW_TAP_TOKEN" "") "" }}true{{ else }}auto{{ end }}'
+    hooks:
+      post:
+        # Release binaries are not notarized.
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/hamsterd"]
+          end
+
+  - name: lemmingd
+    ids: [lemmingd]
+    binaries: [lemmingd]
+    manpages: [docs/lemmingd.1]
+    description: HTTPS proxy that routes selected paths of a real site to local servers
+    homepage: https://github.com/BOPOHA/hamsterd
+    repository: *tap
+    directory: Casks
+    commit_author: *author
+    skip_upload: '{{ if eq (envOrDefault "HOMEBREW_TAP_TOKEN" "") "" }}true{{ else }}auto{{ end }}'
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/lemmingd"]
+          end
 
 changelog:
   sort: asc

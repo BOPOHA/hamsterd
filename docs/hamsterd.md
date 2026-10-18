@@ -197,6 +197,42 @@ reduce bandwidth or egress cost. It can also help during a temporary outage
 while an entry remains usable, but `hamsterd` is not an offline mirror and
 should not be relied on as one.
 
+## Run in a container
+
+Releases publish a multi-architecture image (`linux/amd64`, `linux/arm64`) for
+the shared-cache use case:
+
+```sh
+docker run -d --name hamsterd -p 192.168.10.5:8080:8080 \
+  -v hamsterd-state:/var/lib/hamsterd ghcr.io/bopoha/hamsterd:latest
+docker cp hamsterd:/var/lib/hamsterd/ca.crt ./hamsterd-ca.crt
+```
+
+The image is based on distroless `static`, runs as the unprivileged user
+`65532`, and contains no shell. Its built-in configuration listens on port
+`8080` inside the container with `allow_remote_clients` enabled, so the remote
+destination and port restrictions apply. It intercepts every HTTPS host; mount
+your own configuration with an exact `domains` list at
+`/etc/hamsterd/config.json`, such as
+[`examples/hamsterd-shared.json`](../examples/hamsterd-shared.json). A
+[Compose file](../examples/docker-compose.yml) shows both.
+
+The `/var/lib/hamsterd` volume holds `ca.key`, `ca.crt`, and the cache. Keep
+it private and back it up together with the clients' trust of `ca.crt`. A bind
+mount must be writable by user `65532`.
+
+If an internal mirror uses a private CA, mount its certificate and point Go's
+verifier at it, for example
+`-v ./corp-ca.pem:/etc/ssl/corp-ca.pem:ro -e SSL_CERT_FILE=/etc/ssl/corp-ca.pem`.
+`SSL_CERT_FILE` replaces the default bundle, so include public roots in that
+file if public hosts are also proxied.
+
+Verify the image provenance with:
+
+```sh
+gh attestation verify oci://ghcr.io/bopoha/hamsterd:latest --repo BOPOHA/hamsterd
+```
+
 ## Poor fits
 
 `hamsterd` is deliberately conservative. It is not a replacement for an

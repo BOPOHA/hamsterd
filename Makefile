@@ -1,4 +1,4 @@
-.PHONY: all build builddep clean deps fc hamsterd lemmingd rpm run srpm test vet
+.PHONY: all build builddep clean demo deps fc hamsterd lemmingd rpm run srpm test vet
 
 ALL_BINARY = hamsterd lemmingd
 PRJNAME ?= hamsterd
@@ -83,3 +83,9 @@ fc: srpm
 run:
 	$(call build_bin_current,$(name))
 	@./bin/$(name)
+
+# Record the README demo GIFs. Requires vhs (https://github.com/charmbracelet/vhs)
+# and network access to releases.hashicorp.com and example.com.
+demo: build
+	vhs docs/demo/hamsterd.tape
+	vhs docs/demo/lemmingd.tape
