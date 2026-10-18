@@ -71,7 +71,8 @@ CI/CD artifacts.
 
 ### hamsterd
 
-- [ ] Cache administration commands: list, purge by URL or host, show size.
+- [ ] Cache administration commands (`hamsterd cache list|purge|stats`) on top
+      of the same control API.
 - [ ] Optional refusal of private-network (RFC 1918, ULA) destinations for
       deployments that do not need internal mirrors.
 - [ ] A configurable connection limit and remote-mode idle timeout.
@@ -96,8 +97,11 @@ CI/CD artifacts.
 
 ### AI agents
 
-- [ ] An MCP server or Claude Code skill to start a proxy with a given rule set,
-      report cache statistics, and launch the isolated browser profile.
+- [ ] hamsterd control API and MCP tools: cache statistics, lookup (why a URL
+      is a HIT, MISS, or BYPASS), and purge by URL or host, served by the
+      running daemon so its cache index stays consistent.
+- [ ] `lemmingd mcp` tool to launch the isolated Firefox profile, and optional
+      start of lemmingd when it is not running.
 
 ### Project and community
 

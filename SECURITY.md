@@ -44,6 +44,22 @@ so its key cannot create intermediate CAs. Intercepted hosts receive
 certificates valid for 30 days, each with its own random key and serial
 number; these leaf keys exist only in memory.
 
+## lemmingd control API
+
+The optional control API used by `lemmingd mcp` is disabled unless
+`config.json` sets `"control_api": true`. It listens only on a random
+`127.0.0.1` port, separate from the proxy listener, and requires a random
+256-bit token that `lemmingd` writes at each start to `control.json` in its
+private configuration directory, mode `0600`. Requests addressed by any other
+`Host`, or carrying browser `Origin` or `Sec-Fetch-*` headers, are refused to
+prevent DNS rebinding and cross-site requests. A local process that can read
+the configuration directory can therefore control `lemmingd`; it could equally
+read `config.json` and `ca.key`.
+
+Rules added through the API are written to `rules.auto.json`, which accepts
+only routing rules. Agents cannot enable remote clients or remote targets,
+change the listen address, remove rules from `config.json`, or read `ca.key`.
+
 ## Shared development cache
 
 `hamsterd` can serve a trusted development LAN, lab, or build farm, but

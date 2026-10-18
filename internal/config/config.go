@@ -66,14 +66,17 @@ func (r *RedirectRule) UnmarshalJSON(data []byte) error {
 }
 
 type Config struct {
-	Version            int            `json:"version"`
-	Listen             string         `json:"listen"`
-	AllowRemoteClients bool           `json:"allow_remote_clients,omitempty"`
-	AllowRemoteTargets bool           `json:"allow_remote_targets,omitempty"`
-	ConnectPorts       []int          `json:"allowed_connect_ports,omitempty"`
-	Domains            []string       `json:"domains,omitempty"`
-	Cache              Cache          `json:"cache,omitempty"`
-	Rules              []RedirectRule `json:"rules,omitempty"`
+	Version            int    `json:"version"`
+	Listen             string `json:"listen"`
+	AllowRemoteClients bool   `json:"allow_remote_clients,omitempty"`
+	AllowRemoteTargets bool   `json:"allow_remote_targets,omitempty"`
+	ConnectPorts       []int  `json:"allowed_connect_ports,omitempty"`
+	// ControlAPI enables lemmingd's loopback control API, used by
+	// `lemmingd mcp` and `lemmingd config merge`. It is off by default.
+	ControlAPI bool           `json:"control_api,omitempty"`
+	Domains    []string       `json:"domains,omitempty"`
+	Cache      Cache          `json:"cache,omitzero"`
+	Rules      []RedirectRule `json:"rules,omitempty"`
 }
 
 type fileConfig struct {
@@ -249,6 +252,9 @@ func (c Config) Validate(service Service) error {
 	if err := validateListen(c.Listen, c.AllowRemoteClients); err != nil {
 		return err
 	}
+	if c.ControlAPI && service != Lemmingd {
+		return errors.New("control_api is supported only by lemmingd")
+	}
 	if len(c.ConnectPorts) > 0 && !c.AllowRemoteClients {
 		return errors.New("allowed_connect_ports applies only with allow_remote_clients")
 	}
@@ -275,7 +281,7 @@ func (c Config) Validate(service Service) error {
 		}
 	case Lemmingd:
 		for i := range c.Rules {
-			if err := validateRule(c.Rules[i], c.AllowRemoteTargets); err != nil {
+			if err := ValidateRule(c.Rules[i], c.AllowRemoteTargets); err != nil {
 				return fmt.Errorf("rules[%d]: %w", i, err)
 			}
 		}
@@ -300,7 +306,9 @@ func validateListen(address string, allowRemote bool) error {
 	return nil
 }
 
-func validateRule(rule RedirectRule, allowRemote bool) error {
+// ValidateRule checks one lemmingd rule. allowRemote reports whether the
+// configuration permits non-loopback targets.
+func ValidateRule(rule RedirectRule, allowRemote bool) error {
 	if len(rule.Domains) == 0 {
 		return errors.New("domains must not be empty")
 	}

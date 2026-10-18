@@ -1,4 +1,4 @@
-.TH LEMMINGD 1 "October 2026" "lemmingd 0.1.3" "User Commands"
+.TH LEMMINGD 1 "October 2026" "lemmingd 0.3.0" "User Commands"
 .SH NAME
 lemmingd \- selective local-development HTTP and HTTPS proxy
 .SH SYNOPSIS
@@ -7,6 +7,15 @@ lemmingd \- selective local-development HTTP and HTTPS proxy
 .br
 .B lemmingd firefox
 .RI [ options ] " URL"
+.br
+.B lemmingd mcp
+.RB [ \-config
+.IR PATH ]
+.br
+.B lemmingd config
+.RB [ \-config
+.IR PATH ]
+.BR show | merge
 .SH DESCRIPTION
 .B lemmingd
 routes configured domain and path combinations to local development servers or
@@ -36,6 +45,23 @@ Firefox. The managed profile retains browser data and remains configured for
 the proxy between launches. Lemmingd refuses to modify the profile while
 Firefox holds its profile lock. To use the combined command again, close
 Firefox and stop any existing lemmingd process first.
+.PP
+The
+.B mcp
+command serves the Model Context Protocol on standard input and output for
+coding agents. It controls the running lemmingd through its control API, which
+must be enabled with
+.B """control_api"": true"
+in the configuration. Rules added through the API are applied immediately and
+stored in
+.IR rules.auto.json ;
+.B config show
+prints the effective configuration and
+.B config merge
+moves those rules into
+.IR config.json ,
+keeping the previous file as
+.IR config.json.bak .
 .SH OPTIONS
 .TP
 .BI \-config " path"
@@ -74,6 +100,14 @@ Generated public CA certificate.
 .TP
 .I $XDG_CONFIG_HOME/lemmingd/ca.key
 Generated private CA key. Do not share this file.
+.TP
+.I $XDG_CONFIG_HOME/lemmingd/rules.auto.json
+Rules added through the control API. It can contain only rules.
+.TP
+.I $XDG_CONFIG_HOME/lemmingd/control.json
+Control API address and token while lemmingd runs with
+.BR control_api .
+Readable only by the owner.
 .TP
 .I $XDG_CONFIG_HOME/lemmingd/firefox-profile/
 Dedicated Firefox profile created by the

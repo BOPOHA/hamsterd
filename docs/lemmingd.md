@@ -463,6 +463,101 @@ Use separate rules for separate domains:
 
 Several domains can share one target by listing them in the same rule.
 
+## Control lemmingd from coding agents (MCP)
+
+Coding agents such as Claude Code, Cursor, or VS Code Copilot can inspect and
+change the routing of a running `lemmingd` through the Model Context Protocol.
+An agent can then route a site's frontend to the dev server it just started,
+check where a URL goes, and see which requests the browser made, without you
+editing `config.json`.
+
+1. Enable the control API in `config.json` and restart `lemmingd`. It is off by
+   default:
+
+   ```json
+   {
+     "version": 1,
+     "listen": "127.0.0.1:18080",
+     "control_api": true,
+     "rules": []
+   }
+   ```
+
+   The log then shows `control API enabled for lemmingd mcp`.
+
+2. Register `lemmingd mcp` with the agent. For Claude Code:
+
+   ```sh
+   claude mcp add lemmingd -- lemmingd mcp
+   ```
+
+   Other MCP clients use the same command in their JSON configuration:
+
+   ```json
+   {
+     "mcpServers": {
+       "lemmingd": { "command": "lemmingd", "args": ["mcp"] }
+     }
+   }
+   ```
+
+   Pass `-config PATH` after `mcp` when `lemmingd` runs with a non-default
+   configuration file.
+
+`lemmingd mcp` never starts a proxy. It controls the `lemmingd` or
+`lemmingd firefox URL` that is already running, and keeps working when that
+proxy restarts. It provides these tools:
+
+| Tool | What it does |
+| --- | --- |
+| `status` | Proxy address for browsers, version, CA certificate file and fingerprint, remote-access settings, rule counts |
+| `list_rules` | All rules in order, with `source` `config` (from `config.json`) or `auto` |
+| `test_route` | Whether a URL is intercepted, and whether a local target or the real server answers, with the exact target URL |
+| `recent_requests` | Recent requests to rule domains and plain HTTP requests, newest first, with the target that served them; tunneled HTTPS to other domains is not visible, and query strings are not recorded |
+| `add_rule` | Add a rule; it applies immediately and is saved |
+| `remove_rule` | Remove a rule added with `add_rule`, by one of its domains |
+
+### Rules added at runtime
+
+Rules added through the control API are stored in `rules.auto.json` next to
+`config.json`, following the idea of PostgreSQL's `postgresql.auto.conf`:
+`config.json` stays yours and is never rewritten by the API. The effective rules
+are the `config.json` rules followed by the `rules.auto.json` rules, and a
+domain may appear in only one of them. `rules.auto.json` can contain only rules,
+so neither an agent nor anything that writes that file can change `listen`,
+`allow_remote_clients`, or `allow_remote_targets`. Agent-added targets must be
+loopback unless `config.json` already sets `allow_remote_targets`, and rules
+from `config.json` cannot be removed through the API. At most 100 rules can be
+added this way.
+
+To inspect or keep these rules:
+
+```sh
+lemmingd config show    # effective configuration and the source of each rule
+lemmingd config merge   # move rules.auto.json into config.json
+```
+
+Do not replace `config.json` with `rules.auto.json`: the auto file holds only
+rules. `lemmingd config merge` appends them to the `rules` list in
+`config.json`, keeps the previous file as `config.json.bak`, validates the
+result first, and then removes `rules.auto.json`. When a `lemmingd` with the
+control API is running, the command asks it to perform the merge so that its
+live rules stay consistent; otherwise it edits the files directly. To discard
+the agent's rules instead, delete `rules.auto.json` and restart `lemmingd`.
+Merging is a command-line operation only; agents cannot change `config.json`.
+
+### How the control API is protected
+
+The control API listens on a random port of `127.0.0.1`, never on the proxy
+port and never on the network, even with `allow_remote_clients`. At every
+start, `lemmingd` writes the URL and a new random 256-bit token to
+`control.json`, readable only by your user, and removes it on exit: anyone who
+can read your private configuration directory can control `lemmingd`, which is
+the same trust boundary as `config.json` and `ca.key`. Requests must carry the
+token, address the listener by its literal loopback address, and must not carry
+browser `Origin` or `Sec-Fetch-*` headers, so web pages cannot reach the API
+through DNS rebinding or cross-site requests. The API never exposes `ca.key`.
+
 ## Troubleshooting
 
 - **`TLS handshake error ... unknown certificate authority` is logged:** the
@@ -496,6 +591,8 @@ Several domains can share one target by listing them in the same rule.
 
 ## Security boundaries
 
+- Enable `control_api` only when you use `lemmingd mcp` or
+  `lemmingd config merge` with a running instance; it is off by default.
 - Keep the listener on `127.0.0.1`. Setting `allow_remote_clients` does not add
   authentication. It refuses loopback, link-local, and metadata destinations
   other than the configured targets, accepts `CONNECT` only to port `443` or to

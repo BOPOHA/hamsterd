@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -44,13 +45,9 @@ type Options struct {
 	// ConnectPorts lists the CONNECT ports allowed with RemoteClients. An
 	// empty list allows only DefaultConnectPort.
 	ConnectPorts []int
-	// TrustedTargets are exact host:port destinations that bypass the
-	// destination guard, such as configured lemmingd routes.
-	TrustedTargets []string
-	// TrustedHosts are hostnames whose requests the caller routes to trusted
-	// targets, such as lemmingd rule domains. They bypass the host check that
-	// runs before request handlers.
-	TrustedHosts []string
+	// Trusted lists destinations that bypass the remote-client checks, such
+	// as configured lemmingd routes. It may be updated while serving.
+	Trusted *TrustList
 	// ListenAddress is the proxy's own address, refused as a destination to
 	// prevent request loops.
 	ListenAddress string
@@ -254,26 +251,71 @@ func writeConnectError(writer io.Writer, ctx *goproxy.ProxyCtx, err error) {
 		status, text, len(text)+1, text)
 }
 
+// TrustList holds destinations exempt from the remote-client checks. It is
+// safe for concurrent use and can be replaced atomically.
+type TrustList struct {
+	sets atomic.Pointer[trustSets]
+}
+
+type trustSets struct {
+	targets map[string]struct{}
+	hosts   map[string]struct{}
+}
+
+// NewTrustList returns a list with the given targets and hosts.
+func NewTrustList(targets, hosts []string) *TrustList {
+	list := &TrustList{}
+	list.Set(targets, hosts)
+	return list
+}
+
+// Set replaces the trusted targets (exact host:port destinations that
+// bypass the dial-time guard) and hosts (hostnames whose requests the caller
+// routes to trusted targets, exempt from the host check before handlers).
+func (list *TrustList) Set(targets, hosts []string) {
+	sets := &trustSets{targets: make(map[string]struct{}), hosts: make(map[string]struct{})}
+	for _, target := range targets {
+		sets.targets[strings.ToLower(target)] = struct{}{}
+	}
+	for _, host := range hosts {
+		sets.hosts[normalizeHostname(host)] = struct{}{}
+	}
+	list.sets.Store(sets)
+}
+
+// HasTarget reports whether hostPort is a trusted target.
+func (list *TrustList) HasTarget(hostPort string) bool {
+	return list.target(hostPort)
+}
+
+func (list *TrustList) target(hostPort string) bool {
+	if list == nil {
+		return false
+	}
+	_, ok := list.sets.Load().targets[strings.ToLower(hostPort)]
+	return ok
+}
+
+func (list *TrustList) host(host string) bool {
+	if list == nil {
+		return false
+	}
+	_, ok := list.sets.Load().hosts[host]
+	return ok
+}
+
 type destinationGuard struct {
-	enabled      bool
-	trusted      map[string]struct{}
-	trustedHosts map[string]struct{}
-	dialer       *net.Dialer
-	direct       *net.Dialer
+	enabled bool
+	trusted *TrustList
+	dialer  *net.Dialer
+	direct  *net.Dialer
 }
 
 func newDestinationGuard(options Options) *destinationGuard {
 	guard := &destinationGuard{
-		enabled:      options.RemoteClients,
-		trusted:      make(map[string]struct{}),
-		trustedHosts: make(map[string]struct{}),
-		direct:       &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second},
-	}
-	for _, target := range options.TrustedTargets {
-		guard.trusted[strings.ToLower(target)] = struct{}{}
-	}
-	for _, host := range options.TrustedHosts {
-		guard.trustedHosts[normalizeHostname(host)] = struct{}{}
+		enabled: options.RemoteClients,
+		trusted: options.Trusted,
+		direct:  &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second},
 	}
 	self := selfAddresses(options.ListenAddress)
 	guard.dialer = &net.Dialer{
@@ -302,7 +344,7 @@ func newDestinationGuard(options Options) *destinationGuard {
 // deniedHost reports a host:port or host whose name or literal address is
 // refused without DNS resolution. Trusted targets are allowed.
 func (guard *destinationGuard) deniedHost(hostPort string) bool {
-	if _, ok := guard.trusted[strings.ToLower(hostPort)]; ok {
+	if guard.trusted.target(hostPort) {
 		return false
 	}
 	host := hostPort
@@ -310,7 +352,7 @@ func (guard *destinationGuard) deniedHost(hostPort string) bool {
 		host = splitHost
 	}
 	host = normalizeHostname(strings.Trim(host, "[]"))
-	if _, ok := guard.trustedHosts[host]; ok {
+	if guard.trusted.host(host) {
 		return false
 	}
 	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
@@ -324,7 +366,7 @@ func (guard *destinationGuard) DialContext(ctx context.Context, network, address
 	if !guard.enabled {
 		return guard.direct.DialContext(ctx, network, address)
 	}
-	if _, ok := guard.trusted[strings.ToLower(address)]; ok {
+	if guard.trusted.target(address) {
 		return guard.direct.DialContext(ctx, network, address)
 	}
 	conn, err := guard.dialer.DialContext(ctx, network, address)

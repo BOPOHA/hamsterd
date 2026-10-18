@@ -188,6 +188,28 @@ func TestRouterHonorsExplicitTargetScheme(t *testing.T) {
 	}
 }
 
+func TestRouterLookup(t *testing.T) {
+	router, err := New([]config.RedirectRule{{
+		Target: "127.0.0.1:5173", Domains: []string{"app.example"}, Include: []string{"/"}, Exclude: []string{"/api/"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		host, path          string
+		intercepted, routed bool
+	}{
+		{"App.Example:443", "/index.html", true, true},
+		{"app.example", "/api/users", true, false},
+		{"other.example", "/", false, false},
+	} {
+		rule, intercepted, routed := router.Lookup(test.host, test.path)
+		if intercepted != test.intercepted || routed != test.routed || (routed && rule.Target != "127.0.0.1:5173") {
+			t.Fatalf("Lookup(%s, %s) = %+v %v %v", test.host, test.path, rule, intercepted, routed)
+		}
+	}
+}
+
 func TestNormalizeHost(t *testing.T) {
 	tests := map[string]string{
 		" Example.COM. ":        "example.com",

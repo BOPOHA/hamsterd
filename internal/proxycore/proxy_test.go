@@ -268,7 +268,7 @@ func TestRemoteClientsCannotReachLoopbackDestinations(t *testing.T) {
 	}{
 		{name: "loopback clients", options: Options{}, status: http.StatusOK},
 		{name: "remote clients", options: Options{RemoteClients: true}, status: http.StatusForbidden},
-		{name: "trusted target", options: Options{RemoteClients: true, TrustedTargets: []string{upstreamHost}}, status: http.StatusOK},
+		{name: "trusted target", options: Options{RemoteClients: true, Trusted: NewTrustList([]string{upstreamHost}, nil)}, status: http.StatusOK},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -415,7 +415,7 @@ func TestDeniedDestination(t *testing.T) {
 }
 
 func TestRemoteClientsAreRefusedBeforeHandlers(t *testing.T) {
-	proxy, _ := New(discardLogger(), Options{RemoteClients: true, TrustedTargets: []string{"localhost:5173"}, TrustedHosts: []string{"App.Localhost."}})
+	proxy, _ := New(discardLogger(), Options{RemoteClients: true, Trusted: NewTrustList([]string{"localhost:5173"}, []string{"App.Localhost."})})
 	var reached atomic.Int32
 	proxy.OnRequest().DoFunc(func(request *http.Request, _ *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 		reached.Add(1)
@@ -447,6 +447,22 @@ func TestRemoteClientsAreRefusedBeforeHandlers(t *testing.T) {
 	}
 	if reached.Load() != 3 {
 		t.Fatalf("later handlers ran %d times, want 3", reached.Load())
+	}
+}
+
+func TestTrustListUpdatesLive(t *testing.T) {
+	trusted := NewTrustList(nil, nil)
+	guard := newDestinationGuard(Options{RemoteClients: true, Trusted: trusted})
+	if !guard.deniedHost("localhost:5173") {
+		t.Fatal("untrusted loopback target allowed")
+	}
+	trusted.Set([]string{"localhost:5173"}, []string{"app.localhost"})
+	if guard.deniedHost("localhost:5173") || guard.deniedHost("app.localhost:443") {
+		t.Fatal("trusted entries still denied after Set")
+	}
+	trusted.Set(nil, nil)
+	if !guard.deniedHost("localhost:5173") {
+		t.Fatal("removed target still trusted")
 	}
 }
 

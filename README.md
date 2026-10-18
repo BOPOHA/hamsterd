@@ -246,6 +246,20 @@ configuration. Your usual Firefox profile remains direct and unchanged.
 On Windows, pass `-nss-certutil PATH` for the NSS `certutil` executable; the
 built-in Windows `certutil.exe` cannot configure Firefox trust.
 
+### Let a coding agent drive lemmingd (MCP)
+
+Set `"control_api": true` in lemmingd's `config.json`, restart it, and register
+the MCP server with your agent, for example:
+
+```sh
+claude mcp add lemmingd -- lemmingd mcp
+```
+
+The agent can then check where a URL goes, add or remove routing rules live,
+and see which requests the browser made. Agent-added rules are kept in
+`rules.auto.json`; `lemmingd config merge` moves them into `config.json`. See
+[Control lemmingd from coding agents](docs/lemmingd.md#control-lemmingd-from-coding-agents-mcp).
+
 ## Configuration
 
 Common options:
@@ -258,6 +272,7 @@ Common options:
 | `allowed_connect_ports` | With `allow_remote_clients`: `CONNECT` ports that clients may use. Defaults to `[443]`. |
 | `domains` | `hamsterd` only: exact hostnames to intercept and cache; an empty or omitted list means all hosts. |
 | `allow_remote_targets` | `lemmingd` only: permits routing to non-loopback targets. Remote plain-HTTP targets must be written as `http://host:port`. |
+| `control_api` | `lemmingd` only: enables the loopback control API used by `lemmingd mcp`. Off by default. |
 
 Command-line options override paths or the listen address. The Firefox launcher
 is `lemmingd firefox [options] URL`; its two Firefox-specific options are
@@ -272,6 +287,10 @@ marked below:
 -nss-certutil PATH       # lemmingd firefox only
 -version
 ```
+
+lemmingd also has `lemmingd mcp [-config PATH]` for coding agents and
+`lemmingd config [-config PATH] show|merge` for rules added through its
+control API.
 
 The 2022 `Socket`, `CustomConfig`, `LocalSocket`, `Domains`, `StartWithWL`, and
 `StartWithBL` JSON names are still understood when an old config is supplied

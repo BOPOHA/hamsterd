@@ -3,6 +3,27 @@
 All notable changes will be documented in this file. Releases follow semantic
 versioning while the project remains below version 1.0.
 
+## [Unreleased]
+
+### Added
+
+- `lemmingd mcp`: a Model Context Protocol server for coding agents, built on
+  the official Go SDK, with `status`, `list_rules`, `test_route`,
+  `recent_requests`, `add_rule`, and `remove_rule` tools.
+- lemmingd control API (`"control_api": true`, off by default) on a random
+  loopback port, protected by a per-start token in a private `control.json`
+  and by Host, Origin, and Fetch Metadata checks.
+- Rules added through the control API apply without a restart and are stored
+  in `rules.auto.json`, which can contain only rules.
+- `lemmingd config show` prints the effective configuration, and
+  `lemmingd config merge` moves `rules.auto.json` into `config.json`, keeping
+  `config.json.bak`.
+
+### Changed
+
+- New lemmingd configuration files no longer contain an empty hamsterd
+  `cache` section.
+
 ## [0.2.0] - 2026-10-18
 
 ### Security

@@ -27,17 +27,29 @@ installs trust automatically.
 
 %package -n lemmingd
 Summary:        Selective local-development HTTP and HTTPS proxy
-License:        MIT AND BSD-3-Clause
+# go-sdk is relicensing from MIT to Apache-2.0 and carries both.
+License:        MIT AND Apache-2.0 AND BSD-3-Clause
 Recommends:     nss-tools
 Provides:       bundled(golang(github.com/elazarl/goproxy)) = 1.9.2
+Provides:       bundled(golang(github.com/google/jsonschema-go)) = 0.4.3
+Provides:       bundled(golang(github.com/modelcontextprotocol/go-sdk)) = 1.8.0
+Provides:       bundled(golang(github.com/segmentio/asm)) = 1.1.3
+Provides:       bundled(golang(github.com/segmentio/encoding)) = 0.5.4
+Provides:       bundled(golang(github.com/yosida95/uritemplate/v3)) = 3.0.2
 Provides:       bundled(golang(golang.org/x/net)) = 0.61.0
+Provides:       bundled(golang(golang.org/x/oauth2)) = 0.35.0
+Provides:       bundled(golang(golang.org/x/sync)) = 0.24.0
+Provides:       bundled(golang(golang.org/x/sys)) = 0.49.0
 Provides:       bundled(golang(golang.org/x/text)) = 0.43.0
+Provides:       bundled(golang(golang.org/x/time)) = 0.15.0
 
 %description -n lemmingd
 lemmingd intercepts configured development domains and routes selected URL paths
 to local HTTP servers or explicitly allowed remote origins. Other domains are
 passed through without TLS interception. Its optional Firefox command launches a
-dedicated browser profile with profile-local proxy settings and CA trust.
+dedicated browser profile with profile-local proxy settings and CA trust. Its
+optional control API and "lemmingd mcp" command let coding agents inspect and
+change routing rules through the Model Context Protocol.
 
 %prep
 %setup -T -b 0 -q -n hamsterd
@@ -61,11 +73,6 @@ install -Dm644 docs/hamsterd.1 %{buildroot}%{_mandir}/man1/hamsterd.1
 install -Dm644 docs/lemmingd.1 %{buildroot}%{_mandir}/man1/lemmingd.1
 for package in hamsterd lemmingd; do
     install -Dm644 LICENSE %{buildroot}%{_licensedir}/${package}/LICENSE
-    install -Dm644 vendor/github.com/elazarl/goproxy/LICENSE \
-        %{buildroot}%{_licensedir}/${package}/LICENSE-goproxy
-    # x/net and x/text carry the same Go project BSD-3-Clause text.
-    install -Dm644 vendor/golang.org/x/net/LICENSE \
-        %{buildroot}%{_licensedir}/${package}/LICENSE-go-x-net-and-x-text
 
     # Keep the repository layout so relative links in README.md also work in
     # installed package documentation.
@@ -77,6 +84,15 @@ for package in hamsterd lemmingd; do
     install -m644 docs/*.md %{buildroot}%{_docdir}/${package}/docs/
     install -d %{buildroot}%{_docdir}/${package}/examples
     install -m644 examples/*.json %{buildroot}%{_docdir}/${package}/examples/
+done
+# License texts of the modules linked into each binary.
+for module in github.com/elazarl/goproxy golang.org/x/net golang.org/x/text; do
+    install -Dm644 vendor/${module}/LICENSE \
+        %{buildroot}%{_licensedir}/hamsterd/vendor/${module}/LICENSE
+done
+for module in $(sed -n 's/^# \([^ ]*\) .*/\1/p' vendor/modules.txt); do
+    install -Dm644 vendor/${module}/LICENSE \
+        %{buildroot}%{_licensedir}/lemmingd/vendor/${module}/LICENSE
 done
 
 %files

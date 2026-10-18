@@ -75,6 +75,16 @@ func (r *Router) PlaintextRemoteTargets() []string {
 	return targets
 }
 
+// Lookup reports how a request for hostPort and path is handled: whether
+// the host is intercepted, and whether the path is routed to rule's target.
+func (r *Router) Lookup(hostPort, path string) (rule Rule, intercepted, routed bool) {
+	rule, intercepted = r.hosts[normalizeHost(hostPort)]
+	if !intercepted {
+		return Rule{}, false, false
+	}
+	return rule, true, matches(path, rule)
+}
+
 func (r *Router) Intercepts(hostPort string) bool {
 	_, ok := r.hosts[normalizeHost(hostPort)]
 	return ok
