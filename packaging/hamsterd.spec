@@ -2,7 +2,7 @@
 %global debug_package %{nil}
 
 Name:           hamsterd
-Version:        0.1.3
+Version:        0.2.0
 Release:        1%{?dist}
 Summary:        Local caching HTTP and HTTPS development proxy
 
@@ -11,13 +11,13 @@ URL:            https://github.com/BOPOHA/hamsterd
 Source0:        {{{ git_repo_pack }}}
 Source1:        {{{ go_vendor_pack }}}
 
-BuildRequires:  golang >= 1.25
+BuildRequires:  golang >= 1.26
 BuildRequires:  gcc
 
 # All linked modules are carried in Source1 for reproducible offline builds.
-Provides:       bundled(golang(github.com/elazarl/goproxy)) = 1.9.1
-Provides:       bundled(golang(golang.org/x/net)) = 0.51.0
-Provides:       bundled(golang(golang.org/x/text)) = 0.34.0
+Provides:       bundled(golang(github.com/elazarl/goproxy)) = 1.9.2
+Provides:       bundled(golang(golang.org/x/net)) = 0.61.0
+Provides:       bundled(golang(golang.org/x/text)) = 0.43.0
 
 %description
 hamsterd is an HTTP and HTTPS proxy that listens on the loop-back interface by
@@ -29,9 +29,9 @@ installs trust automatically.
 Summary:        Selective local-development HTTP and HTTPS proxy
 License:        MIT AND BSD-3-Clause
 Recommends:     nss-tools
-Provides:       bundled(golang(github.com/elazarl/goproxy)) = 1.9.1
-Provides:       bundled(golang(golang.org/x/net)) = 0.51.0
-Provides:       bundled(golang(golang.org/x/text)) = 0.34.0
+Provides:       bundled(golang(github.com/elazarl/goproxy)) = 1.9.2
+Provides:       bundled(golang(golang.org/x/net)) = 0.61.0
+Provides:       bundled(golang(golang.org/x/text)) = 0.43.0
 
 %description -n lemmingd
 lemmingd intercepts configured development domains and routes selected URL paths
@@ -92,6 +92,15 @@ done
 %{_mandir}/man1/lemmingd.1*
 
 %changelog
+* Sun Oct 18 2026 Anatolii Vorona <vorona.tolik@gmail.com> - 0.2.0-1
+- Update golang.org/x/net to fix HTTP/2 denial-of-service vulnerabilities
+- Restrict remote clients from loopback, link-local, and metadata destinations
+- Limit CONNECT ports, connections, header sizes, and idle tunnels
+- Issue short-lived per-host certificates from a path-constrained CA
+- Bypass the cache for credential headers and count metadata in the size limit
+- Require explicit schemes for remote plain-HTTP lemmingd targets
+- Generate the vendor archive with a private, verified module cache
+
 * Wed Oct 07 2026 Anatolii Vorona <vorona.tolik@gmail.com> - 0.1.3-1
 - Add an isolated Firefox profile launcher with local proxy and CA setup
 - Recommend NSS certutil tools for the optional Firefox launcher
