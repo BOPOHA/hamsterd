@@ -260,6 +260,9 @@ func TestValidateLemmingRules(t *testing.T) {
 		{name: "target format", rule: RedirectRule{Target: "localhost", Domains: base.Domains, Include: base.Include}, want: "target must be host:port"},
 		{name: "target port", rule: RedirectRule{Target: "localhost:nope", Domains: base.Domains, Include: base.Include}, want: "target port"},
 		{name: "remote target", rule: RedirectRule{Target: "192.0.2.1:3000", Domains: base.Domains, Include: base.Include}, want: "allow_remote_targets"},
+		{name: "implicit remote plaintext", rule: RedirectRule{Target: "192.0.2.1:3000", Domains: base.Domains, Include: base.Include}, allowRemote: true, want: "plaintext"},
+		{name: "target scheme", rule: RedirectRule{Target: "ftp://127.0.0.1:21", Domains: base.Domains, Include: base.Include}, want: "http or https"},
+		{name: "target path", rule: RedirectRule{Target: "https://127.0.0.1:3000/app", Domains: base.Domains, Include: base.Include}, want: "target must be host:port"},
 		{name: "empty domain", rule: RedirectRule{Target: base.Target, Domains: []string{""}, Include: base.Include}, want: "invalid domain"},
 		{name: "domain path", rule: RedirectRule{Target: base.Target, Domains: []string{"app.example/path"}, Include: base.Include}, want: "invalid domain"},
 		{name: "include prefix", rule: RedirectRule{Target: base.Target, Domains: base.Domains, Include: []string{"api"}}, want: "must start with /"},
@@ -275,16 +278,80 @@ func TestValidateLemmingRules(t *testing.T) {
 		})
 	}
 
-	cfg := Config{
-		Version:            1,
-		Listen:             "localhost:18080",
-		AllowRemoteTargets: true,
-		Rules: []RedirectRule{{
-			Target: "192.0.2.1:3000", Domains: []string{"app.example"}, Include: []string{"/"},
-		}},
+	for _, target := range []string{"http://192.0.2.1:3000", "https://staging.example:8443", "staging.example:443", "https://127.0.0.1:3000/"} {
+		cfg := Config{
+			Version:            1,
+			Listen:             "localhost:18080",
+			AllowRemoteTargets: true,
+			Rules: []RedirectRule{{
+				Target: target, Domains: []string{"app.example"}, Include: []string{"/"},
+			}},
+		}
+		if err := cfg.Validate(Lemmingd); err != nil {
+			t.Fatalf("explicit remote target %q rejected: %v", target, err)
+		}
 	}
-	if err := cfg.Validate(Lemmingd); err != nil {
-		t.Fatalf("explicit remote target rejected: %v", err)
+}
+
+func TestParseTarget(t *testing.T) {
+	tests := []struct {
+		raw      string
+		scheme   string
+		address  string
+		explicit bool
+		loopback bool
+	}{
+		{raw: "127.0.0.1:3000", scheme: "http", address: "127.0.0.1:3000", loopback: true},
+		{raw: "staging.example:443", scheme: "https", address: "staging.example:443"},
+		{raw: "HTTPS://staging.example:8443/", scheme: "https", address: "staging.example:8443", explicit: true},
+		{raw: "http://localhost:443", scheme: "http", address: "localhost:443", explicit: true, loopback: true},
+	}
+	for _, test := range tests {
+		target, err := ParseTarget(test.raw)
+		if err != nil {
+			t.Fatalf("ParseTarget(%q): %v", test.raw, err)
+		}
+		if target.Scheme != test.scheme || target.Address != test.address || target.Explicit != test.explicit || target.Loopback() != test.loopback {
+			t.Fatalf("ParseTarget(%q) = %+v loopback=%v", test.raw, target, target.Loopback())
+		}
+	}
+}
+
+func TestConnectPortsRequireRemoteClients(t *testing.T) {
+	cache := Cache{Directory: t.TempDir(), MaxSizeMiB: 2, MaxObjectMiB: 1, DefaultTTL: "1h"}
+	cfg := Config{Version: 1, Listen: "127.0.0.1:8080", ConnectPorts: []int{443}, Cache: cache}
+	if err := cfg.Validate(Hamsterd); err == nil || !strings.Contains(err.Error(), "allow_remote_clients") {
+		t.Fatalf("error = %v", err)
+	}
+	cfg.Listen, cfg.AllowRemoteClients = "192.0.2.1:8080", true
+	if err := cfg.Validate(Hamsterd); err != nil {
+		t.Fatal(err)
+	}
+	cfg.ConnectPorts = []int{0}
+	if err := cfg.Validate(Hamsterd); err == nil || !strings.Contains(err.Error(), "invalid") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestLoadRejectsConfigWritableByOthers(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permissions")
+	}
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"version":1,"listen":"127.0.0.1:18080"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o664); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := LoadOrCreate(path, Lemmingd, ""); err == nil || !strings.Contains(err.Error(), "writable by other users") {
+		t.Fatalf("error = %v", err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := LoadOrCreate(path, Lemmingd, ""); err != nil {
+		t.Fatal(err)
 	}
 }
 

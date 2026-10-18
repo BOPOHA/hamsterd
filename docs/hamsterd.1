@@ -53,8 +53,12 @@ Cached response objects. Defaults below
 .IR ~/.cache .
 .SH SECURITY
 The default listener is 127.0.0.1:8080. Remote listening must be explicitly
-enabled and requires separate network access controls. Trust the generated CA
-only in clients intentionally configured to use this proxy.
+enabled and requires separate network access controls; it does not add
+authentication. In remote mode, loopback, link-local, and cloud metadata
+destinations are refused and CONNECT is limited to port 443 or the configured
+.BR allowed_connect_ports .
+Trust the generated CA only in clients intentionally configured to use this
+proxy.
 .SH SEE ALSO
 .BR lemmingd (1),
 the project README, and SECURITY.md.

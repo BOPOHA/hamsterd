@@ -161,6 +161,35 @@ trust the server's public `ca.crt`; never copy `ca.key` to a client. There is no
 built-in client authentication, so do not expose the listener to the internet
 or an untrusted LAN.
 
+With `allow_remote_clients`, `hamsterd` also:
+
+- refuses destinations on the proxy host's loopback interface, link-local
+  addresses such as the `169.254.169.254` cloud metadata service, and its own
+  listening address, after DNS resolution;
+- accepts `CONNECT` only to port `443`, or to the ports listed in
+  `allowed_connect_ports`;
+- closes tunnels with no traffic in either direction for 15 minutes.
+
+Private-network destinations, such as an internal package mirror, remain
+reachable. Package files from `dnf` and `apt` mirrors cache well. Repository
+metadata such as `repomd.xml` and `InRelease` changes in place and, without
+origin freshness headers, is reused for `default_ttl`; keep `default_ttl` short
+for such use until conditional revalidation is available. A shared
+configuration might be:
+
+```json
+{
+  "version": 1,
+  "listen": "192.168.10.5:8080",
+  "allow_remote_clients": true,
+  "allowed_connect_ports": [443],
+  "domains": [
+    "registry.terraform.io",
+    "releases.hashicorp.com"
+  ]
+}
+```
+
 ### 5. Slow, metered, VPN, or egress-charged connections
 
 Caching avoids transferring unchanged public resources repeatedly and can
@@ -182,9 +211,14 @@ rules; it does not make an artifact reproducible or immutable.
 `hamsterd` caches only complete `GET` responses with status `200`. It bypasses
 requests containing:
 
-- `Authorization`, `Cookie`, or `Range` headers;
+- `Authorization`, `Proxy-Authorization`, `Cookie`, or `Range` headers;
+- headers that commonly carry credentials: any header name containing `auth`,
+  `token`, `api-key`, `apikey`, `secret`, `password`, `credential`, `session`,
+  or `signature`, as well as `X-JFrog-Art-Api`, `Metadata`, and
+  `Metadata-Flavor`;
 - `Cache-Control: no-cache` or `Cache-Control: no-store`;
-- credentials embedded in the URL.
+- credentials embedded in the URL;
+- link-local and cloud metadata hosts, such as `169.254.169.254`.
 
 It also bypasses responses containing:
 
@@ -199,7 +233,9 @@ is too large only while streaming it. That request can report `MISS`, discard
 the partial cache file, and report `MISS` again next time.
 
 Origin `Cache-Control: max-age`, `stale-while-revalidate`, and `Expires` values
-are honored. If neither freshness value is present, `default_ttl` is used. The
+are honored. If neither freshness value is present, `default_ttl` is used only
+when the response has an `ETag` or `Last-Modified` validator, as downloadable
+artifacts normally do; other responses are bypassed. The
 cache key contains the HTTP method, full URL including its query string, and
 the request's `Accept-Encoding` and `Origin` values so those supported variants
 cannot be mixed.
@@ -240,8 +276,12 @@ empty list preserves the default behavior of caching and intercepting all
 hosts.
 
 An empty `directory` uses `~/.cache/hamsterd/`, or the equivalent below
-`XDG_CACHE_HOME`. `max_size_mib` limits the complete cache, and least-recently
-used entries are removed when necessary. `default_ttl` uses Go duration syntax,
+`XDG_CACHE_HOME`. The directory must be dedicated to `hamsterd`: it is made
+private, and startup refuses a directory that contains other files.
+`max_size_mib` limits the complete cache, including stored response headers,
+and least-recently used entries are removed when necessary. Downloads in
+progress may use up to the same amount of temporary space; beyond that, further
+responses are passed through without caching. `default_ttl` uses Go duration syntax,
 such as `30m`, `1h`, or `24h`.
 
 Restart `hamsterd` after editing its configuration.
@@ -251,7 +291,11 @@ Restart `hamsterd` after editing its configuration.
 - **Certificate errors:** install this `hamsterd` instance's CA in the client
   that uses the proxy. `lemmingd` has a different CA.
 - **Everything says `BYPASS`:** check the request and response against the
-  conservative cache rules above. Cookies and authorization are common causes.
+  conservative cache rules above. Cookies, authorization or token headers, and
+  responses without freshness information or a validator are common causes.
+- **A shared proxy returns `403 Forbidden`:** remote-client mode refused a
+  loopback, link-local, or metadata destination, or a `CONNECT` port not in
+  `allowed_connect_ports`. The log shows the host and reason.
 - **A repeated request says `MISS`:** confirm the exact URL is unchanged, the
   first response body was downloaded completely, the entry has not expired,
   and a streaming response did not exceed `max_object_mib`.
@@ -270,8 +314,9 @@ Restart `hamsterd` after editing its configuration.
 Without a `domains` allowlist, `hamsterd` intercepts every HTTPS hostname
 requested through it. Its CA can issue a certificate for any hostname, so
 protect `ca.key` and keep the proxy on loopback. Setting
-`allow_remote_clients` to `true` permits a non-loopback listener but does not
-add authentication.
+`allow_remote_clients` to `true` permits a non-loopback listener and enables
+the destination and port restrictions described above, but does not add
+authentication.
 
 Trust the CA only in intended development clients, remove it when finished,
 and never share, publish, or import `ca.key`.

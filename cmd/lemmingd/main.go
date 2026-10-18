@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/BOPOHA/hamsterd/internal/buildinfo"
 	"github.com/BOPOHA/hamsterd/internal/config"
@@ -82,8 +83,20 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	proxy, _ := proxycore.New(logger)
-	mitm := proxycore.MITM(&ca.Certificate)
+	options := proxycore.Options{
+		RemoteClients:  cfg.AllowRemoteClients,
+		ConnectPorts:   cfg.ConnectPorts,
+		TrustedTargets: router.Targets(),
+		TrustedHosts:   router.Domains(),
+		ListenAddress:  cfg.Listen,
+	}
+	proxy, _ := proxycore.New(logger, options)
+	issuer, err := pki.NewIssuer(ca.Certificate, 1024)
+	if err != nil {
+		logger.Printf("CA error: %v", err)
+		return 1
+	}
+	mitm := proxycore.MITM(proxy, issuer, logger)
 	proxy.OnRequest().HandleConnectFunc(func(host string, _ *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
 		if router.Intercepts(host) {
 			return mitm, host
@@ -107,6 +120,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 		logger.Printf("created a unique local CA; certificate: %s; private key: %s", *caCertPath, *caKeyPath)
 		logger.Printf("trust the certificate only on clients that intentionally use this proxy")
 	}
+	if ca.ExpiresSoon(time.Now()) {
+		logger.Printf("warning: CA expires at %s; before then, remove it from client trust stores, delete %s and %s, restart, and trust the new CA",
+			ca.Certificate.Leaf.NotAfter.Format(time.RFC3339), *caCertPath, *caKeyPath)
+	}
+	for _, target := range router.PlaintextRemoteTargets() {
+		logger.Printf("warning: target %s is remote plain HTTP; intercepted HTTPS requests, cookies, and credentials cross the network unencrypted", target)
+	}
+	if cfg.AllowRemoteClients {
+		logger.Printf("remote clients allowed without authentication; restrict access with firewall rules")
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	var onReady func() error
@@ -128,7 +151,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return nil
 		}
 	}
-	if err := proxycore.ServeAfterListen(ctx, cfg.Listen, proxy, logger, onReady); err != nil {
+	if err := proxycore.ServeAfterListen(ctx, cfg.Listen, proxy, logger, options, onReady); err != nil {
 		logger.Printf("server error: %v", err)
 		return 1
 	}

@@ -84,7 +84,8 @@ interactive browser session.
 
 ## Requirements
 
-- Go 1.25 or newer
+- Go 1.26 or newer to build from source; release binaries are built with the
+  Go version in the `go.mod` `toolchain` line
 - A client that supports an HTTP proxy
 - Firefox and Mozilla NSS `certutil` only when using `lemmingd firefox`
 - `rpkg`, `rpmbuild`, and `mock` only when building RPMs
@@ -184,9 +185,10 @@ Common options:
 | --- | --- |
 | `version` | Configuration format; currently `1`. |
 | `listen` | Proxy address. Defaults to `127.0.0.1:8080` or `127.0.0.1:18080`. |
-| `allow_remote_clients` | Required before a non-loopback listen address is accepted. It does not provide authentication by itself. |
+| `allow_remote_clients` | Required before a non-loopback listen address is accepted. It refuses loopback, link-local, and metadata destinations and limits `CONNECT` ports, but does not provide authentication. |
+| `allowed_connect_ports` | With `allow_remote_clients`: `CONNECT` ports that clients may use. Defaults to `[443]`. |
 | `domains` | `hamsterd` only: exact hostnames to intercept and cache; an empty or omitted list means all hosts. |
-| `allow_remote_targets` | `lemmingd` only: permits routing to non-loopback targets. |
+| `allow_remote_targets` | `lemmingd` only: permits routing to non-loopback targets. Remote plain-HTTP targets must be written as `http://host:port`. |
 
 Command-line options override paths or the listen address. The Firefox launcher
 is `lemmingd firefox [options] URL`; its two Firefox-specific options are
@@ -213,12 +215,28 @@ HTTPS interception works only after the client trusts the generated CA. Trust
 it only in the development client or container that uses the proxy. Never copy
 or publish `ca.key`, and do not expose either proxy to an untrusted network.
 
+A generated CA is valid for two years and cannot issue intermediate CAs. Each
+intercepted host receives a short-lived certificate with its own key. Thirty
+days before the CA expires, the proxy logs a warning; to rotate it, remove the
+old CA from client trust stores, delete `ca.crt` and `ca.key`, and restart.
+CAs created by earlier releases remain valid until their own expiry date.
+
 The CAs distributed by historical releases had public private keys and are
 unsafe. The new binaries refuse all known historical certificates. Remove them
 from every trust store and delete old `~/.hamsterd/ca.crt` and
 `~/.hamsterd/ca.key` files.
 
 See [SECURITY.md](SECURITY.md) for the security model and reporting guidance.
+
+## Verify a release download
+
+Release archives have SHA-256 checksums, SPDX SBOMs, and GitHub build
+provenance attestations:
+
+```sh
+sha256sum --ignore-missing -c checksums.txt
+gh attestation verify hamsterd_0.2.0_linux_amd64.tar.gz --repo BOPOHA/hamsterd
+```
 
 ## Development
 

@@ -202,12 +202,14 @@ func TestResponseExpirationPolicy(t *testing.T) {
 		mutate func(*http.Response)
 		ok     bool
 	}{
-		{name: "default", mutate: func(*http.Response) {}, ok: true},
+		{name: "no freshness or validator", mutate: func(*http.Response) {}},
+		{name: "default with ETag", mutate: func(r *http.Response) { r.Header.Set("ETag", `"v1"`) }, ok: true},
+		{name: "default with Last-Modified", mutate: func(r *http.Response) { r.Header.Set("Last-Modified", now.Add(-time.Hour).Format(http.TimeFormat)) }, ok: true},
 		{name: "status", mutate: func(r *http.Response) { r.StatusCode = http.StatusNotFound }},
 		{name: "set cookie", mutate: func(r *http.Response) { r.Header.Set("Set-Cookie", "x=y") }},
-		{name: "supported vary encoding", mutate: func(r *http.Response) { r.Header.Set("Vary", "Accept-Encoding") }, ok: true},
-		{name: "supported vary origin", mutate: func(r *http.Response) { r.Header.Set("Vary", "Origin") }, ok: true},
-		{name: "supported vary combination", mutate: func(r *http.Response) { r.Header.Set("Vary", "Accept-Encoding, Origin") }, ok: true},
+		{name: "supported vary encoding", mutate: func(r *http.Response) { r.Header.Set("Vary", "Accept-Encoding"); r.Header.Set("ETag", `"v1"`) }, ok: true},
+		{name: "supported vary origin", mutate: func(r *http.Response) { r.Header.Set("Vary", "Origin"); r.Header.Set("ETag", `"v1"`) }, ok: true},
+		{name: "supported vary combination", mutate: func(r *http.Response) { r.Header.Set("Vary", "Accept-Encoding, Origin"); r.Header.Set("ETag", `"v1"`) }, ok: true},
 		{name: "unsupported vary", mutate: func(r *http.Response) { r.Header.Set("Vary", "Accept") }},
 		{name: "vary wildcard", mutate: func(r *http.Response) { r.Header.Set("Vary", "*") }},
 		{name: "content range", mutate: func(r *http.Response) { r.Header.Set("Content-Range", "bytes 0-1/2") }},
@@ -489,7 +491,9 @@ func TestTransportExpiresAndEvictsEntries(t *testing.T) {
 		config.DefaultTTL = time.Nanosecond
 		transport, err := NewTransport(roundTripperFunc(func(request *http.Request) (*http.Response, error) {
 			calls.Add(1)
-			return response(request, "body", ""), nil
+			got := response(request, "body", "")
+			got.Header.Set("ETag", `"v1"`)
+			return got, nil
 		}), config)
 		if err != nil {
 			t.Fatal(err)
@@ -504,18 +508,19 @@ func TestTransportExpiresAndEvictsEntries(t *testing.T) {
 	t.Run("eviction", func(t *testing.T) {
 		var calls atomic.Int32
 		config := testConfig(t)
-		config.MaxBytes = 5
-		config.MaxObjectBytes = 5
+		body := strings.Repeat("x", 1000)
+		// One entry (body plus metadata) fits; two do not.
+		config.MaxBytes = 2000
+		config.MaxObjectBytes = 1000
 		transport, err := NewTransport(roundTripperFunc(func(request *http.Request) (*http.Response, error) {
 			calls.Add(1)
-			return response(request, "four", "public, max-age=60"), nil
+			return response(request, body, "public, max-age=60"), nil
 		}), config)
 		if err != nil {
 			t.Fatal(err)
 		}
-		fetchURL := func(rawURL string) {
-			request, _ := http.NewRequest(http.MethodGet, rawURL, nil)
-			got, err := transport.RoundTrip(request)
+		fetchURL := func(rawURL string) string {
+			got, err := transport.RoundTrip(mustRequest(t, rawURL))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -523,20 +528,24 @@ func TestTransportExpiresAndEvictsEntries(t *testing.T) {
 				t.Fatal(err)
 			}
 			got.Body.Close()
+			return got.Header.Get(statusHeader)
 		}
 		fetchURL("https://example.test/one")
-		firstMeta, firstBody := transport.store.paths(cacheKey(mustRequest(t, "https://example.test/one")))
-		old := time.Unix(1, 0)
-		if err := os.Chtimes(firstMeta, old, old); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Chtimes(firstBody, old, old); err != nil {
-			t.Fatal(err)
+		if status := fetchURL("https://example.test/one"); status != "HIT" {
+			t.Fatalf("second fetch status = %q", status)
 		}
 		fetchURL("https://example.test/two")
-		fetchURL("https://example.test/one")
+		if status := fetchURL("https://example.test/one"); status != "MISS" {
+			t.Fatalf("least recently used entry was not evicted; status = %q", status)
+		}
 		if calls.Load() != 3 {
 			t.Fatalf("upstream calls = %d, want 3 after eviction", calls.Load())
+		}
+		transport.store.mu.Lock()
+		total := transport.store.total
+		transport.store.mu.Unlock()
+		if total <= 1000 || total > config.MaxBytes {
+			t.Fatalf("tracked size = %d, want body plus metadata within the limit", total)
 		}
 	})
 }
@@ -548,4 +557,156 @@ func mustRequest(t *testing.T, rawURL string) *http.Request {
 		t.Fatal(err)
 	}
 	return request
+}
+
+func TestCacheableRequestRejectsCredentialHeadersAndPrivateHosts(t *testing.T) {
+	for _, header := range []string{"X-Api-Key", "PRIVATE-TOKEN", "Job-Token", "X-JFrog-Art-Api", "X-Amz-Security-Token",
+		"X-aws-ec2-metadata-token", "Metadata-Flavor", "Metadata", "X-Auth-User", "Proxy-Authorization"} {
+		request := mustRequest(t, "https://example.test/file")
+		request.Header.Set(header, "value")
+		if cacheableRequest(request) {
+			t.Fatalf("request with %s is cacheable", header)
+		}
+	}
+	for _, rawURL := range []string{"http://169.254.169.254/latest/meta-data/", "http://[fe80::1]/x", "http://[fd00:ec2::254]/x",
+		"http://100.100.100.200/x", "http://metadata.google.internal/computeMetadata/v1/"} {
+		if cacheableRequest(mustRequest(t, rawURL)) {
+			t.Fatalf("request to %s is cacheable", rawURL)
+		}
+	}
+	if !cacheableRequest(mustRequest(t, "http://127.0.0.1:8000/x")) {
+		t.Fatal("loopback test origin is not cacheable")
+	}
+	request := mustRequest(t, "https://example.test/file")
+	request.Header.Set("Accept", "*/*")
+	request.Header.Set("User-Agent", "test")
+	if !cacheableRequest(request) {
+		t.Fatal("ordinary request is not cacheable")
+	}
+}
+
+func TestNewTransportRebuildsIndexAndCleansDirectory(t *testing.T) {
+	config := testConfig(t)
+	var calls atomic.Int32
+	base := roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		calls.Add(1)
+		return response(request, "persisted", "public, max-age=60"), nil
+	})
+	transport, err := NewTransport(base, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fetch(t, transport, "")
+
+	stale := filepath.Join(config.Directory, ".cache-123.tmp")
+	fresh := filepath.Join(config.Directory, ".metadata-456.tmp")
+	for _, path := range []string{stale, fresh} {
+		if err := os.WriteFile(path, []byte("partial"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old := time.Now().Add(-2 * staleTemporaryAge)
+	if err := os.Chtimes(stale, old, old); err != nil {
+		t.Fatal(err)
+	}
+	orphan := filepath.Join(config.Directory, strings.Repeat("a", 64)+".body")
+	if err := os.WriteFile(orphan, []byte("no metadata"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	restarted, err := NewTransport(base, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fetch(t, restarted, "").Header.Get(statusHeader); got != "HIT" {
+		t.Fatalf("status after restart = %q", got)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("upstream calls = %d", calls.Load())
+	}
+	for path, want := range map[string]bool{stale: false, fresh: true, orphan: false} {
+		if _, err := os.Stat(path); (err == nil) != want {
+			t.Fatalf("%s exists = %v, want %v", filepath.Base(path), err == nil, want)
+		}
+	}
+	if len(restarted.store.entries) != 1 {
+		t.Fatalf("index entries = %d", len(restarted.store.entries))
+	}
+}
+
+func TestNewTransportRejectsSharedDirectory(t *testing.T) {
+	config := testConfig(t)
+	if err := os.Chmod(config.Directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	foreign := filepath.Join(config.Directory, "notes.txt")
+	if err := os.WriteFile(foreign, []byte("keep me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewTransport(nil, config); err == nil || !strings.Contains(err.Error(), "dedicated cache directory") {
+		t.Fatalf("error = %v", err)
+	}
+	if _, err := os.Stat(foreign); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(config.Directory); err != nil || info.Mode().Perm() != 0o755 {
+		t.Fatalf("shared directory permissions changed: %v %v", info.Mode(), err)
+	}
+}
+
+func TestTransportDoesNotStoreOversizedMetadata(t *testing.T) {
+	var calls atomic.Int32
+	transport, err := NewTransport(roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		calls.Add(1)
+		got := response(request, "body", "public, max-age=60")
+		got.Header.Set("X-Large", strings.Repeat("x", maxMetadataBytes))
+		return got, nil
+	}), testConfig(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fetch(t, transport, "")
+	fetch(t, transport, "")
+	if calls.Load() != 2 {
+		t.Fatalf("oversized metadata was cached; calls = %d", calls.Load())
+	}
+	entries, err := os.ReadDir(transport.store.directory)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("cache directory entries = %v, %v", entries, err)
+	}
+}
+
+func TestTransportLimitsPendingTemporaryData(t *testing.T) {
+	config := testConfig(t)
+	config.MaxBytes = 10
+	config.MaxObjectBytes = 10
+	transport, err := NewTransport(roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		return response(request, "123456", "public, max-age=60"), nil
+	}), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := transport.RoundTrip(mustRequest(t, "https://example.test/one"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := transport.RoundTrip(mustRequest(t, "https://example.test/two"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffer := make([]byte, 6)
+	if _, err := io.ReadFull(first.Body, buffer); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.ReadFull(second.Body, buffer); err != nil {
+		t.Fatal(err)
+	}
+	if !second.Body.(*capturingBody).disabled {
+		t.Fatal("second capture exceeded the pending-data budget")
+	}
+	first.Body.Close()
+	second.Body.Close()
+	if got := transport.store.pending.Load(); got != 0 {
+		t.Fatalf("pending bytes after close = %d", got)
+	}
 }

@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/BOPOHA/hamsterd/internal/config"
 )
 
 type Rule struct {
+	Scheme  string
 	Target  string
 	Include []string
 	Exclude []string
@@ -22,7 +24,11 @@ type Router struct {
 func New(rules []config.RedirectRule) (*Router, error) {
 	router := &Router{hosts: make(map[string]Rule)}
 	for _, source := range rules {
-		rule := Rule{Target: source.Target, Include: source.Include, Exclude: source.Exclude}
+		target, err := config.ParseTarget(source.Target)
+		if err != nil {
+			return nil, err
+		}
+		rule := Rule{Scheme: target.Scheme, Target: target.Address, Include: source.Include, Exclude: source.Exclude}
 		for _, domain := range source.Domains {
 			host := normalizeHost(domain)
 			if _, exists := router.hosts[host]; exists {
@@ -32,6 +38,41 @@ func New(rules []config.RedirectRule) (*Router, error) {
 		}
 	}
 	return router, nil
+}
+
+// Domains returns the configured browser-visible domains.
+func (r *Router) Domains() []string {
+	domains := make([]string, 0, len(r.hosts))
+	for host := range r.hosts {
+		domains = append(domains, host)
+	}
+	slices.Sort(domains)
+	return domains
+}
+
+// Targets returns the configured target addresses.
+func (r *Router) Targets() []string {
+	var targets []string
+	for _, rule := range r.hosts {
+		if !slices.Contains(targets, rule.Target) {
+			targets = append(targets, rule.Target)
+		}
+	}
+	slices.Sort(targets)
+	return targets
+}
+
+// PlaintextRemoteTargets returns non-loopback targets reached over HTTP.
+func (r *Router) PlaintextRemoteTargets() []string {
+	var targets []string
+	for _, rule := range r.hosts {
+		target := config.Target{Scheme: rule.Scheme, Address: rule.Target}
+		if rule.Scheme == "http" && !target.Loopback() && !slices.Contains(targets, rule.Target) {
+			targets = append(targets, rule.Target)
+		}
+	}
+	slices.Sort(targets)
+	return targets
 }
 
 func (r *Router) Intercepts(hostPort string) bool {
@@ -50,7 +91,7 @@ func (r *Router) Rewrite(request *http.Request) (*http.Request, bool) {
 	clone := request.Clone(request.Context())
 	urlCopy := *request.URL
 	clone.URL = &urlCopy
-	clone.URL.Scheme = targetScheme(rule.Target)
+	clone.URL.Scheme = rule.Scheme
 	clone.URL.Host = rule.Target
 	// URL.Host controls where the transport connects. Host controls the HTTP
 	// Host header, which must remain the browser-visible domain so a local
@@ -59,14 +100,6 @@ func (r *Router) Rewrite(request *http.Request) (*http.Request, bool) {
 		clone.Host = request.URL.Host
 	}
 	return clone, true
-}
-
-func targetScheme(target string) string {
-	_, port, err := net.SplitHostPort(target)
-	if err == nil && port == "443" {
-		return "https"
-	}
-	return "http"
 }
 
 func matches(path string, rule Rule) bool {

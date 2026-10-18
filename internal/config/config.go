@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -69,6 +70,7 @@ type Config struct {
 	Listen             string         `json:"listen"`
 	AllowRemoteClients bool           `json:"allow_remote_clients,omitempty"`
 	AllowRemoteTargets bool           `json:"allow_remote_targets,omitempty"`
+	ConnectPorts       []int          `json:"allowed_connect_ports,omitempty"`
 	Domains            []string       `json:"domains,omitempty"`
 	Cache              Cache          `json:"cache,omitempty"`
 	Rules              []RedirectRule `json:"rules,omitempty"`
@@ -129,6 +131,9 @@ func LoadOrCreate(path string, service Service, cacheDir string) (Config, bool, 
 	if err != nil {
 		return Config{}, false, fmt.Errorf("read config %q: %w", path, err)
 	}
+	if err := checkPrivate(path); err != nil {
+		return Config{}, false, err
+	}
 	cfg, err := decode(data)
 	if err != nil {
 		return Config{}, false, fmt.Errorf("parse config %q: %w", path, err)
@@ -152,6 +157,22 @@ func LoadOrCreate(path string, service Service, cacheDir string) (Config, bool, 
 		return Config{}, false, fmt.Errorf("validate config %q: %w", path, err)
 	}
 	return cfg, false, nil
+}
+
+// checkPrivate refuses configuration that other local users can modify,
+// because it controls remote-client exposure and routing targets.
+func checkPrivate(path string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("inspect config %q: %w", path, err)
+	}
+	if info.Mode().Perm()&0o022 != 0 {
+		return fmt.Errorf("config %q is writable by other users (mode %04o); run chmod go-w on it", path, info.Mode().Perm())
+	}
+	return nil
 }
 
 func decode(data []byte) (Config, error) {
@@ -228,6 +249,14 @@ func (c Config) Validate(service Service) error {
 	if err := validateListen(c.Listen, c.AllowRemoteClients); err != nil {
 		return err
 	}
+	if len(c.ConnectPorts) > 0 && !c.AllowRemoteClients {
+		return errors.New("allowed_connect_ports applies only with allow_remote_clients")
+	}
+	for _, port := range c.ConnectPorts {
+		if port < 1 || port > 65535 {
+			return fmt.Errorf("allowed_connect_ports: port %d is invalid", port)
+		}
+	}
 	switch service {
 	case Hamsterd:
 		for _, domain := range c.Domains {
@@ -278,16 +307,17 @@ func validateRule(rule RedirectRule, allowRemote bool) error {
 	if len(rule.Include) == 0 {
 		return errors.New("include_paths must not be empty")
 	}
-	host, port, err := net.SplitHostPort(rule.Target)
-	if err != nil || port == "" {
-		return errors.New("target must be host:port")
+	target, err := ParseTarget(rule.Target)
+	if err != nil {
+		return err
 	}
-	portNumber, err := strconv.Atoi(port)
-	if err != nil || portNumber < 1 || portNumber > 65535 {
-		return errors.New("target port is invalid")
-	}
-	if !allowRemote && !isLoopback(host) {
-		return errors.New("target is not loopback; set allow_remote_targets to permit it")
+	if !target.Loopback() {
+		if !allowRemote {
+			return errors.New("target is not loopback; set allow_remote_targets to permit it")
+		}
+		if target.Scheme == "http" && !target.Explicit {
+			return fmt.Errorf("remote target %q would receive intercepted HTTPS traffic as plaintext; use https://%s, or http://%s to accept that", rule.Target, rule.Target, rule.Target)
+		}
 	}
 	for _, domain := range rule.Domains {
 		if domain == "" || strings.ContainsAny(domain, "/?#") {
@@ -300,6 +330,49 @@ func validateRule(rule RedirectRule, allowRemote bool) error {
 		}
 	}
 	return nil
+}
+
+// Target is a parsed lemmingd routing destination.
+type Target struct {
+	Scheme string
+	// Address is the host:port to which the proxy connects.
+	Address string
+	// Explicit reports that the configuration spelled out the scheme.
+	Explicit bool
+}
+
+// ParseTarget accepts host:port, http://host:port, or https://host:port.
+// Without a scheme, port 443 selects HTTPS and any other port selects HTTP.
+func ParseTarget(raw string) (Target, error) {
+	target := Target{Address: raw}
+	if scheme, rest, found := strings.Cut(raw, "://"); found {
+		scheme = strings.ToLower(scheme)
+		if scheme != "http" && scheme != "https" {
+			return Target{}, fmt.Errorf("target scheme %q must be http or https", scheme)
+		}
+		target = Target{Scheme: scheme, Address: strings.TrimSuffix(rest, "/"), Explicit: true}
+	}
+	host, port, err := net.SplitHostPort(target.Address)
+	if err != nil || host == "" || port == "" || strings.ContainsAny(target.Address, "/?#@") {
+		return Target{}, errors.New("target must be host:port, http://host:port, or https://host:port")
+	}
+	portNumber, err := strconv.Atoi(port)
+	if err != nil || portNumber < 1 || portNumber > 65535 {
+		return Target{}, errors.New("target port is invalid")
+	}
+	if target.Scheme == "" {
+		target.Scheme = "http"
+		if port == "443" {
+			target.Scheme = "https"
+		}
+	}
+	return target, nil
+}
+
+// Loopback reports whether the target host is a loopback name or address.
+func (t Target) Loopback() bool {
+	host, _, err := net.SplitHostPort(t.Address)
+	return err == nil && isLoopback(host)
 }
 
 func isLoopback(host string) bool {

@@ -1,23 +1,39 @@
 package cache
 
 import (
+	"container/list"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
-const statusHeader = "X-Hamsterd-Cache"
+const (
+	statusHeader = "X-Hamsterd-Cache"
+	// maxMetadataBytes bounds the stored response headers of one entry.
+	maxMetadataBytes = 64 << 10
+	// staleTemporaryAge is how long an unmodified temporary file may remain
+	// before startup treats it as left over from an interrupted process.
+	staleTemporaryAge = time.Hour
+)
+
+var (
+	entryName     = regexp.MustCompile(`^([0-9a-f]{64})\.(body|json)$`)
+	temporaryName = regexp.MustCompile(`^\.(cache|metadata)-[0-9]+\.tmp$`)
+)
 
 type Config struct {
 	Directory      string
@@ -36,8 +52,20 @@ type store struct {
 	maxBytes       int64
 	maxObjectBytes int64
 	defaultTTL     time.Duration
-	mu             sync.Mutex
-	refreshing     map[string]struct{}
+	// pending counts bytes in temporary files of downloads in progress.
+	pending atomic.Int64
+
+	mu         sync.Mutex
+	refreshing map[string]struct{}
+	// index tracks committed entries by recency; front is most recent.
+	index   *list.List
+	entries map[string]*list.Element
+	total   int64
+}
+
+type indexEntry struct {
+	key  string
+	size int64
 }
 
 type metadata struct {
@@ -69,19 +97,85 @@ func NewTransport(base http.RoundTripper, config Config) (*Transport, error) {
 	if err := os.MkdirAll(config.Directory, 0o700); err != nil {
 		return nil, fmt.Errorf("create cache directory: %w", err)
 	}
+	s := &store{
+		directory:      config.Directory,
+		maxBytes:       config.MaxBytes,
+		maxObjectBytes: config.MaxObjectBytes,
+		defaultTTL:     config.DefaultTTL,
+		refreshing:     make(map[string]struct{}),
+		index:          list.New(),
+		entries:        make(map[string]*list.Element),
+	}
+	// Scan before chmod so that a mistakenly shared directory is rejected
+	// without changing its permissions.
+	if err := s.scan(time.Now()); err != nil {
+		return nil, err
+	}
 	if err := os.Chmod(config.Directory, 0o700); err != nil {
 		return nil, fmt.Errorf("secure cache directory: %w", err)
 	}
-	return &Transport{
-		base: base,
-		store: &store{
-			directory:      config.Directory,
-			maxBytes:       config.MaxBytes,
-			maxObjectBytes: config.MaxObjectBytes,
-			defaultTTL:     config.DefaultTTL,
-			refreshing:     make(map[string]struct{}),
-		},
-	}, nil
+	return &Transport{base: base, store: s}, nil
+}
+
+// scan rebuilds the in-memory index from the cache directory. It refuses a
+// directory that contains files hamsterd did not create, because eviction
+// deletes entries and the directory is made private.
+func (s *store) scan(now time.Time) error {
+	items, err := os.ReadDir(s.directory)
+	if err != nil {
+		return fmt.Errorf("read cache directory: %w", err)
+	}
+	type scanned struct {
+		size    int64
+		modTime time.Time
+		parts   int
+	}
+	found := make(map[string]*scanned)
+	for _, item := range items {
+		name := item.Name()
+		if name == ".DS_Store" {
+			continue
+		}
+		if temporaryName.MatchString(name) {
+			if info, err := item.Info(); err == nil && now.Sub(info.ModTime()) > staleTemporaryAge {
+				_ = os.Remove(filepath.Join(s.directory, name))
+			}
+			continue
+		}
+		match := entryName.FindStringSubmatch(name)
+		if match == nil || !item.Type().IsRegular() {
+			return fmt.Errorf("cache directory %q contains %q, which hamsterd did not create; use a dedicated cache directory", s.directory, name)
+		}
+		info, err := item.Info()
+		if err != nil {
+			continue
+		}
+		entry := found[match[1]]
+		if entry == nil {
+			entry = &scanned{}
+			found[match[1]] = entry
+		}
+		entry.size += info.Size()
+		entry.parts++
+		if info.ModTime().After(entry.modTime) {
+			entry.modTime = info.ModTime()
+		}
+	}
+	keys := make([]string, 0, len(found))
+	for key, entry := range found {
+		if entry.parts != 2 {
+			s.removeLocked(key)
+			continue
+		}
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool { return found[keys[i]].modTime.Before(found[keys[j]].modTime) })
+	for _, key := range keys {
+		s.entries[key] = s.index.PushFront(&indexEntry{key: key, size: found[key].size})
+		s.total += found[key].size
+	}
+	s.evictLocked()
+	return nil
 }
 
 func (t *Transport) RoundTrip(request *http.Request) (*http.Response, error) {
@@ -168,13 +262,55 @@ func cacheableRequest(request *http.Request) bool {
 	if request.Method != http.MethodGet || request.URL == nil || request.URL.User != nil {
 		return false
 	}
-	if request.Header.Get("Authorization") != "" || request.Header.Get("Cookie") != "" || request.Header.Get("Range") != "" {
+	if request.Header.Get("Range") != "" || hasCredentialHeader(request.Header) || privateDestination(request.URL.Hostname()) {
 		return false
 	}
 	directives := parseCacheControl(request.Header.Get("Cache-Control"))
 	_, noStore := directives["no-store"]
 	_, noCache := directives["no-cache"]
 	return !noStore && !noCache
+}
+
+var credentialHeaders = map[string]struct{}{
+	"authorization":       {},
+	"proxy-authorization": {},
+	"cookie":              {},
+	"metadata":            {}, // Azure instance metadata
+	"metadata-flavor":     {}, // Google Cloud metadata
+	"x-jfrog-art-api":     {},
+}
+
+var credentialHeaderParts = []string{"auth", "token", "api-key", "apikey", "api_key", "secret", "password", "credential", "session", "signature"}
+
+// hasCredentialHeader reports request headers that commonly carry
+// credentials. A response to such a request may be specific to the caller,
+// so it must not be served to other clients.
+func hasCredentialHeader(header http.Header) bool {
+	for name := range header {
+		lower := strings.ToLower(name)
+		if _, ok := credentialHeaders[lower]; ok {
+			return true
+		}
+		for _, part := range credentialHeaderParts {
+			if strings.Contains(lower, part) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// privateDestination reports link-local and cloud metadata hosts, whose
+// responses describe the proxy host, often with credentials, rather than a
+// public artifact. Loopback origins stay cacheable for local testing; remote
+// clients cannot reach them through the destination guard.
+func privateDestination(host string) bool {
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	if host == "metadata.google.internal" || host == "metadata.goog" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && (ip.IsLinkLocalUnicast() || ip.Equal(net.ParseIP("fd00:ec2::254")) || ip.Equal(net.ParseIP("100.100.100.200")))
 }
 
 type expiration struct {
@@ -210,8 +346,12 @@ func responseExpiration(response *http.Response, now time.Time, defaultTTL time.
 			return expiration{}, false
 		}
 		freshUntil = expiresAt
-	} else {
+	} else if response.Header.Get("ETag") != "" || response.Header.Get("Last-Modified") != "" {
+		// Without explicit freshness, only artifact-like responses that
+		// carry a validator receive the default TTL.
 		freshUntil = now.Add(defaultTTL)
+	} else {
+		return expiration{}, false
 	}
 	staleUntil := freshUntil
 	if raw, ok := directives.value("stale-while-revalidate"); ok {
@@ -296,7 +436,7 @@ func (s *store) load(key string, request *http.Request) (*http.Response, bool, b
 		return nil, false, false
 	}
 	var meta metadata
-	err = json.NewDecoder(io.LimitReader(metaFile, 1<<20)).Decode(&meta)
+	err = json.NewDecoder(io.LimitReader(metaFile, maxMetadataBytes)).Decode(&meta)
 	_ = metaFile.Close()
 	staleUntil := meta.StaleUntil
 	if staleUntil.IsZero() {
@@ -304,22 +444,26 @@ func (s *store) load(key string, request *http.Request) (*http.Response, bool, b
 	}
 	now := time.Now()
 	if err != nil || now.After(staleUntil) {
-		s.remove(key)
+		s.removeLocked(key)
 		return nil, false, false
 	}
 	body, err := os.Open(bodyPath)
 	if err != nil {
-		s.remove(key)
+		s.removeLocked(key)
 		return nil, false, false
 	}
 	info, err := body.Stat()
 	if err != nil || info.Size() != meta.Size {
 		_ = body.Close()
-		s.remove(key)
+		s.removeLocked(key)
 		return nil, false, false
 	}
+	// File times persist recency across restarts; the index keeps it in memory.
 	_ = os.Chtimes(metaPath, now, now)
 	_ = os.Chtimes(bodyPath, now, now)
+	if element := s.entries[key]; element != nil {
+		s.index.MoveToFront(element)
+	}
 	header := meta.Header.Clone()
 	stale := now.After(meta.ExpiresAt)
 	if stale {
@@ -385,7 +529,13 @@ func (body *capturingBody) Read(buffer []byte) (int, error) {
 	if n > 0 && !body.disabled {
 		if body.written+int64(n) > body.store.maxObjectBytes {
 			body.disable()
+		} else if body.store.pending.Add(int64(n)) > body.store.maxBytes {
+			// Concurrent downloads may not hold more temporary data than
+			// the whole cache budget.
+			body.store.pending.Add(-int64(n))
+			body.disable()
 		} else if _, err := body.temporary.Write(buffer[:n]); err != nil {
+			body.store.pending.Add(-int64(n))
 			body.disable()
 		} else {
 			body.written += int64(n)
@@ -393,10 +543,13 @@ func (body *capturingBody) Read(buffer []byte) (int, error) {
 	}
 	if readErr == io.EOF && !body.disabled {
 		body.meta.Size = body.written
-		if err := body.store.commit(body.key, body.temporary, body.meta); err == nil {
+		err := body.store.commit(body.key, body.temporary, body.meta)
+		body.store.pending.Add(-body.written)
+		body.written = 0
+		if err == nil {
 			body.committed = true
 		} else {
-			body.disable()
+			body.disabled = true
 		}
 	}
 	return n, readErr
@@ -414,55 +567,67 @@ func (body *capturingBody) disable() {
 		return
 	}
 	body.disabled = true
+	body.store.pending.Add(-body.written)
+	body.written = 0
 	name := body.temporary.Name()
 	_ = body.temporary.Close()
 	_ = os.Remove(name)
 }
 
+// commit installs a completed body and its metadata. It removes the
+// temporary body on failure.
 func (s *store) commit(key string, temporary *os.File, meta metadata) error {
+	bodyTempName := temporary.Name()
+	defer os.Remove(bodyTempName)
 	if err := temporary.Sync(); err != nil {
+		temporary.Close()
 		return err
 	}
 	if err := temporary.Close(); err != nil {
 		return err
 	}
-	metaPath, bodyPath := s.paths(key)
-	if err := replace(temporary.Name(), bodyPath); err != nil {
-		return err
-	}
 	metaBytes, err := json.Marshal(meta)
 	if err != nil {
-		_ = os.Remove(bodyPath)
 		return err
+	}
+	if len(metaBytes) > maxMetadataBytes {
+		return fmt.Errorf("cache metadata exceeds %d bytes", maxMetadataBytes)
 	}
 	metaTemp, err := os.CreateTemp(s.directory, ".metadata-*.tmp")
 	if err != nil {
-		_ = os.Remove(bodyPath)
 		return err
 	}
 	metaTempName := metaTemp.Name()
 	defer os.Remove(metaTempName)
 	if err := metaTemp.Chmod(0o600); err != nil {
 		metaTemp.Close()
-		_ = os.Remove(bodyPath)
 		return err
 	}
 	if _, err := metaTemp.Write(metaBytes); err != nil {
 		metaTemp.Close()
-		_ = os.Remove(bodyPath)
 		return err
 	}
 	if err := metaTemp.Close(); err != nil {
-		_ = os.Remove(bodyPath)
+		return err
+	}
+
+	// Install both files under the lock so that load never pairs a new body
+	// with old metadata.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	metaPath, bodyPath := s.paths(key)
+	s.removeLocked(key)
+	if err := replace(bodyTempName, bodyPath); err != nil {
 		return err
 	}
 	if err := replace(metaTempName, metaPath); err != nil {
 		_ = os.Remove(bodyPath)
 		return err
 	}
-	// evict acquires its own lock; commit intentionally does not hold the lock
-	// here so that concurrent loads can proceed while eviction scans the dir.
-	s.evict()
+	size := meta.Size + int64(len(metaBytes))
+	s.entries[key] = s.index.PushFront(&indexEntry{key: key, size: size})
+	s.total += size
+	s.evictLocked()
 	return nil
 }
 
@@ -480,47 +645,26 @@ func replace(source, destination string) error {
 	return os.Rename(source, destination)
 }
 
-func (s *store) remove(key string) {
+// removeLocked deletes an entry's files and index record. Callers hold s.mu,
+// except scan, which runs before the store is shared.
+func (s *store) removeLocked(key string) {
 	metaPath, bodyPath := s.paths(key)
 	_ = os.Remove(metaPath)
 	_ = os.Remove(bodyPath)
+	if element := s.entries[key]; element != nil {
+		s.total -= element.Value.(*indexEntry).size
+		s.index.Remove(element)
+		delete(s.entries, key)
+	}
 }
 
-func (s *store) evict() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	entries, err := os.ReadDir(s.directory)
-	if err != nil {
-		return
-	}
-	type entry struct {
-		key     string
-		size    int64
-		modTime time.Time
-	}
-	var bodies []entry
-	var total int64
-	for _, item := range entries {
-		if item.IsDir() || !strings.HasSuffix(item.Name(), ".body") {
-			continue
+// evictLocked removes least recently used entries until the cache fits.
+func (s *store) evictLocked() {
+	for s.total > s.maxBytes {
+		oldest := s.index.Back()
+		if oldest == nil {
+			return
 		}
-		info, err := item.Info()
-		if err != nil {
-			continue
-		}
-		bodies = append(bodies, entry{
-			key:     strings.TrimSuffix(item.Name(), ".body"),
-			size:    info.Size(),
-			modTime: info.ModTime(),
-		})
-		total += info.Size()
-	}
-	sort.Slice(bodies, func(i, j int) bool { return bodies[i].modTime.Before(bodies[j].modTime) })
-	for _, item := range bodies {
-		if total <= s.maxBytes {
-			break
-		}
-		s.remove(item.key)
-		total -= item.size
+		s.removeLocked(oldest.Value.(*indexEntry).key)
 	}
 }

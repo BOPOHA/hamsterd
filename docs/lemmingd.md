@@ -415,8 +415,13 @@ domain is intercepted so that `lemmingd` can inspect its path, including paths
 that ultimately continue to the real server. HTTPS domains with no rule are
 tunneled without interception.
 
-Targets must be written as `host:port`. Targets use HTTP by default; a target
-on port `443` uses HTTPS. Use a hostname that matches the target certificate:
+Targets are written as `host:port`, `http://host:port`, or
+`https://host:port`. Without a scheme, a target on port `443` uses HTTPS and any
+other port uses HTTP. A remote target reached over plain HTTP must say
+`http://` explicitly, because the browser believes it is talking to an HTTPS
+site: its cookies, including `Secure` cookies, and credentials then cross the
+network unencrypted. Prefer `https://host:port` for remote targets on ports
+other than `443`. Use a hostname that matches the target certificate:
 for example, use `giow1091.siteground.us:443` rather than its IP address when
 that is the certificate name. Lemmingd still sends the browser-visible hostname
 in the HTTP `Host` header, so the target can select the intended virtual host.
@@ -453,10 +458,9 @@ Several domains can share one target by listing them in the same rule.
 
 ## Troubleshooting
 
-- **A `broken pipe` warning appears while browsing:** a browser commonly
-  cancels speculative, navigated-away, or closed connections. This warning is
-  normally harmless when the requested page still loads; investigate it only
-  when it accompanies a reproducible failed request.
+- **`TLS handshake error ... unknown certificate authority` is logged:** the
+  client does not trust this `lemmingd` instance's CA. Disconnects by
+  browsers that cancel speculative connections are not logged.
 
 - **The proxy page opens, but the site is unchanged:** opening port `18080`
   directly is only a health check. Configure the browser's proxy and then open
@@ -486,7 +490,10 @@ Several domains can share one target by listing them in the same rule.
 ## Security boundaries
 
 - Keep the listener on `127.0.0.1`. Setting `allow_remote_clients` does not add
-  authentication.
+  authentication. It refuses loopback, link-local, and metadata destinations
+  other than the configured targets, accepts `CONNECT` only to port `443` or to
+  the ports in `allowed_connect_ports`, and closes tunnels that are idle for 15
+  minutes.
 - Trust `ca.crt` only in clients intentionally using this proxy.
 - Never share, publish, or import `ca.key`.
 - Remove the CA from trust stores when it is no longer needed.

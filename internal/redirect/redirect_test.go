@@ -2,6 +2,7 @@ package redirect
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/BOPOHA/hamsterd/internal/config"
@@ -149,6 +150,41 @@ func TestRouterUsesHTTPSForPort443Target(t *testing.T) {
 	}
 	if got.Host != "uprightpose.com" {
 		t.Fatalf("Host = %q", got.Host)
+	}
+}
+
+func TestRouterHonorsExplicitTargetScheme(t *testing.T) {
+	router, err := New([]config.RedirectRule{
+		{Target: "https://staging.example:8443", Domains: []string{"app.example"}, Include: []string{"/"}},
+		{Target: "http://192.0.2.5:8080", Domains: []string{"api.example"}, Include: []string{"/"}},
+		{Target: "localhost:5173", Domains: []string{"assets.example"}, Include: []string{"/"}},
+		{Target: "https://staging.example:8443", Domains: []string{"www.example"}, Include: []string{"/"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rawURL, want := range map[string]string{
+		"https://app.example/a":    "https://staging.example:8443/a",
+		"https://api.example/b":    "http://192.0.2.5:8080/b",
+		"https://assets.example/c": "http://localhost:5173/c",
+	} {
+		request, _ := http.NewRequest(http.MethodGet, rawURL, nil)
+		got, changed := router.Rewrite(request)
+		if !changed || got.URL.String() != want {
+			t.Fatalf("Rewrite(%s) = %q, want %q", rawURL, got.URL, want)
+		}
+	}
+	if got := strings.Join(router.Targets(), ","); got != "192.0.2.5:8080,localhost:5173,staging.example:8443" {
+		t.Fatalf("Targets = %s", got)
+	}
+	if got := strings.Join(router.Domains(), ","); got != "api.example,app.example,assets.example,www.example" {
+		t.Fatalf("Domains = %s", got)
+	}
+	if got := strings.Join(router.PlaintextRemoteTargets(), ","); got != "192.0.2.5:8080" {
+		t.Fatalf("PlaintextRemoteTargets = %s", got)
+	}
+	if _, err := New([]config.RedirectRule{{Target: "ftp://x:1", Domains: []string{"a"}, Include: []string{"/"}}}); err == nil {
+		t.Fatal("invalid target scheme accepted")
 	}
 }
 

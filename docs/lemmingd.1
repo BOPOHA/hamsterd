@@ -83,7 +83,10 @@ other Firefox data. Close Firefox before removing it.
 .SH SECURITY
 The default listener is 127.0.0.1:18080. Remote clients and non-loopback
 redirect targets each require an explicit opt-in. Apply separate network access
-controls before enabling either option.
+controls before enabling either option. A non-loopback plain-HTTP target must be
+written as
+.I http://host:port
+because intercepted HTTPS traffic then crosses the network unencrypted.
 .PP
 The managed Firefox profile is private to the operating-system user but can
 contain authenticated browsing state. Remove it when that state is no longer

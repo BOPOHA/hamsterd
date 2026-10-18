@@ -38,6 +38,13 @@ var compromisedLegacyCAFingerprints = [...][sha256.Size]byte{
 	},
 }
 
+// CAValidity bounds how long a stolen ca.key remains useful. A new CA is
+// generated only when both CA files are absent.
+const CAValidity = 2 * 365 * 24 * time.Hour
+
+// ExpiryWarning is how early callers should warn that the CA needs rotation.
+const ExpiryWarning = 30 * 24 * time.Hour
+
 type CA struct {
 	Certificate tls.Certificate
 	PEM         []byte
@@ -97,13 +104,19 @@ func load(certPath, keyPath string) (CA, error) {
 	}
 	now := time.Now()
 	if now.Before(leaf.NotBefore) || now.After(leaf.NotAfter) {
-		return CA{}, fmt.Errorf("CA certificate is not valid at %s", now.Format(time.RFC3339))
+		return CA{}, fmt.Errorf("CA certificate is not valid at %s; remove it from client trust stores, delete %s and %s, and restart to generate a new CA",
+			now.Format(time.RFC3339), certPath, keyPath)
 	}
 	certificate.Leaf = leaf
 	if err := os.Chmod(keyPath, 0o600); err != nil {
 		return CA{}, fmt.Errorf("secure CA private key: %w", err)
 	}
 	return CA{Certificate: certificate, PEM: certPEM}, nil
+}
+
+// ExpiresSoon reports whether the CA expires within ExpiryWarning of now.
+func (ca CA) ExpiresSoon(now time.Time) bool {
+	return ca.Certificate.Leaf != nil && ca.Certificate.Leaf.NotAfter.Sub(now) < ExpiryWarning
 }
 
 func isCompromisedLegacyCA(fingerprint [sha256.Size]byte) bool {
@@ -132,11 +145,15 @@ func generate(name string, now time.Time) ([]byte, []byte, error) {
 			CommonName:   name + " local CA",
 		},
 		NotBefore:             now.Add(-5 * time.Minute),
-		NotAfter:              now.AddDate(10, 0, 0),
+		NotAfter:              now.Add(CAValidity),
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
 		IsCA:                  true,
-		MaxPathLen:            0,
+		// MaxPathLenZero makes MaxPathLen 0 explicit; without it Go omits the
+		// path-length constraint and the key could mint intermediate CAs.
+		MaxPathLen:     0,
+		MaxPathLenZero: true,
 	}
 	der, err := x509.CreateCertificate(rand.Reader, template, template, &privateKey.PublicKey, privateKey)
 	if err != nil {

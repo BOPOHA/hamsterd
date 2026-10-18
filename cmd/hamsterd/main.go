@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/signal"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -72,9 +71,17 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	proxy, outbound := proxycore.New(logger)
-	warningLogger := newProxyWarningLogger(logger, 1024)
-	proxy.Logger = warningLogger
+	options := proxycore.Options{
+		RemoteClients: cfg.AllowRemoteClients,
+		ConnectPorts:  cfg.ConnectPorts,
+		ListenAddress: cfg.Listen,
+	}
+	proxy, outbound := proxycore.New(logger, options)
+	issuer, err := pki.NewIssuer(ca.Certificate, 1024)
+	if err != nil {
+		logger.Printf("CA error: %v", err)
+		return 1
+	}
 	cache, err := cachetransport.NewTransport(outbound, cachetransport.Config{
 		Directory:      cfg.Cache.Directory,
 		MaxBytes:       cfg.Cache.MaxSizeMiB * 1024 * 1024,
@@ -85,7 +92,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		logger.Printf("cache error: %v", err)
 		return 1
 	}
-	mitm := proxycore.MITM(&ca.Certificate)
+	mitm := proxycore.MITM(proxy, issuer, logger)
 	proxy.OnRequest().HandleConnectFunc(func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
 		if !matchesDomain(host, cfg.Domains) {
 			logger.Printf("session=%d method=CONNECT host=%s action=tunnel", ctx.Session, domainHost(host))
@@ -95,7 +102,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return mitm, host
 	})
 	proxy.OnRequest().DoFunc(func(request *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-		warningLogger.remember(ctx.Session, request.URL.Hostname())
 		if matchesDomain(request.URL.Hostname(), cfg.Domains) {
 			ctx.RoundTripper = proxycore.RoundTripper(cache)
 		} else {
@@ -122,53 +128,35 @@ func run(args []string, stdout, stderr io.Writer) int {
 		logger.Printf("created a unique local CA; certificate: %s; private key: %s", *caCertPath, *caKeyPath)
 		logger.Printf("trust the certificate only on clients that intentionally use this proxy")
 	}
+	logCAExpiry(logger, ca, *caCertPath, *caKeyPath)
+	if cfg.AllowRemoteClients {
+		logger.Printf("remote clients allowed without authentication; restrict access with firewall rules")
+		logger.Printf("remote mode refuses loopback, link-local, and metadata destinations; CONNECT ports: %v", connectPorts(cfg.ConnectPorts))
+		if len(cfg.Domains) == 0 {
+			logger.Printf("warning: domains is empty, so every HTTPS host is intercepted; set an exact domains list for a shared cache")
+		}
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := proxycore.Serve(ctx, cfg.Listen, proxy, logger); err != nil {
+	if err := proxycore.Serve(ctx, cfg.Listen, proxy, logger, options); err != nil {
 		logger.Printf("server error: %v", err)
 		return 1
 	}
 	return 0
 }
 
-type proxyWarningLogger struct {
-	base  *log.Logger
-	max   int
-	mu    sync.Mutex
-	hosts map[int64]string
-	order []int64
-}
-
-func newProxyWarningLogger(base *log.Logger, maxEntries int) *proxyWarningLogger {
-	return &proxyWarningLogger{base: base, max: maxEntries, hosts: make(map[int64]string)}
-}
-
-func (logger *proxyWarningLogger) remember(session int64, host string) {
-	logger.mu.Lock()
-	defer logger.mu.Unlock()
-	if _, exists := logger.hosts[session]; !exists {
-		if len(logger.order) >= logger.max {
-			delete(logger.hosts, logger.order[0])
-			logger.order = logger.order[1:]
-		}
-		logger.order = append(logger.order, session)
+func connectPorts(ports []int) []int {
+	if len(ports) == 0 {
+		return []int{proxycore.DefaultConnectPort}
 	}
-	logger.hosts[session] = host
+	return ports
 }
 
-func (logger *proxyWarningLogger) Printf(format string, arguments ...any) {
-	if strings.Contains(format, "Cannot write response from mitm'd client") && len(arguments) > 0 {
-		if session, ok := arguments[0].(int64); ok {
-			logger.mu.Lock()
-			host := logger.hosts[session]
-			logger.mu.Unlock()
-			if host != "" {
-				format = strings.TrimSuffix(format, "\n") + " host=%s\n"
-				arguments = append(arguments, host)
-			}
-		}
+func logCAExpiry(logger *log.Logger, ca pki.CA, certPath, keyPath string) {
+	if ca.ExpiresSoon(time.Now()) {
+		logger.Printf("warning: CA expires at %s; before then, remove it from client trust stores, delete %s and %s, restart, and trust the new CA",
+			ca.Certificate.Leaf.NotAfter.Format(time.RFC3339), certPath, keyPath)
 	}
-	logger.base.Printf(format, arguments...)
 }
 
 func matchesDomain(hostPort string, domains []string) bool {

@@ -1,5 +1,15 @@
 # Security policy
 
+## Supported versions
+
+Security fixes are released for the latest minor version only. Before version
+1.0, upgrade to the newest `0.x` release to receive fixes.
+
+| Version | Supported |
+| --- | --- |
+| 0.2.x | Yes |
+| < 0.2 | No |
+
 `hamsterd` and `lemmingd` are TLS interception tools. A trusted proxy CA can
 issue certificates for any hostname, so compromise of its private key has the
 same practical effect as compromise of any locally trusted certificate
@@ -22,15 +32,27 @@ cookies, history, sessions, saved logins, and other authenticated browsing
 state. Close it when testing is complete, protect it as sensitive development
 data, and remove the dedicated profile when it is no longer needed.
 
-Authenticated, cookie-bearing, ranged, private, and otherwise ambiguous
-responses are excluded from `hamsterd`'s cache. Cache and key files are private
-to the operating-system user by default.
+Authenticated, cookie-bearing, token-bearing, ranged, private, and otherwise
+ambiguous responses are excluded from `hamsterd`'s cache. Cache and key files
+are private to the operating-system user by default, and configuration files
+writable by other users are refused.
+
+## Certificate authority scope
+
+A generated CA is valid for two years and has a zero path-length constraint,
+so its key cannot create intermediate CAs. Intercepted hosts receive
+certificates valid for 30 days, each with its own random key and serial
+number; these leaf keys exist only in memory.
 
 ## Shared development cache
 
 `hamsterd` can serve a trusted development LAN, lab, or build farm, but
-`allow_remote_clients` is only an explicit safety acknowledgement: it does not
-enable authentication or authorization. Bind to a private interface, restrict
+`allow_remote_clients` does not enable authentication or authorization. It does
+enable defense in depth: destinations on the proxy host's loopback interface,
+link-local and cloud metadata addresses, and the proxy's own address are
+refused after DNS resolution; `CONNECT` is limited to port `443` unless
+`allowed_connect_ports` lists others; connections are capped; and idle tunnels
+are closed. Bind to a private interface, restrict
 source addresses with host or network firewall rules, and use an exact
 `domains` allowlist whenever practical. Never expose the proxy to the internet
 or an untrusted network.
