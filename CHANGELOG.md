@@ -5,6 +5,29 @@ versioning while the project remains below version 1.0.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-02
+
+### Added
+
+- A lemmingd procedure to test geo-dependent cookie consent (CMP) without a
+  VPN, and an example configuration for it.
+
+### Changed
+
+- `lemmingd firefox` closes its Firefox when lemmingd stops. It asks Firefox
+  to quit, and stops Firefox only if it does not quit in 10 seconds. Firefox
+  runs in its own process group, so `Ctrl+C` in the terminal goes only to
+  lemmingd. The managed profile disables the Firefox quit warning.
+
+### Fixed
+
+- `lemmingd firefox` refused to start after the first Firefox session with
+  "appears to be in use". Firefox keeps its lock file after it exits, and
+  lemmingd examined only whether the file existed. lemmingd now examines
+  whether a running Firefox holds the lock.
+
+## [0.3.0] - 2026-11-02
+
 ### Added
 
 - `lemmingd mcp`: a Model Context Protocol server for coding agents, built on
@@ -21,27 +44,14 @@ versioning while the project remains below version 1.0.
 - `lemmingd config show` prints the effective configuration, and
   `lemmingd config merge` moves `rules.auto.json` into `config.json`, keeping
   `config.json.bak`.
-- A lemmingd procedure to test geo-dependent cookie consent (CMP) without a
-  VPN, and an example configuration for it.
 
 ### Changed
 
-- `lemmingd firefox` closes its Firefox when lemmingd stops. It asks Firefox
-  to quit, and stops Firefox only if it does not quit in 10 seconds. Firefox
-  runs in its own process group, so `Ctrl+C` in the terminal goes only to
-  lemmingd. The managed profile disables the Firefox quit warning.
 - New lemmingd configuration files no longer contain an empty hamsterd
   `cache` section.
 - lemmingd rule domains must be hostnames or IP addresses without a port;
   ports, wildcards, and spaces are now refused instead of silently never
   matching.
-
-### Fixed
-
-- `lemmingd firefox` refused to start after the first Firefox session with
-  "appears to be in use". Firefox keeps its lock file after it exits, and
-  lemmingd examined only whether the file existed. lemmingd now examines
-  whether a running Firefox holds the lock.
 
 ### Security
 

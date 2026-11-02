@@ -2,7 +2,7 @@
 %global debug_package %{nil}
 
 Name:           hamsterd
-Version:        0.2.0
+Version:        0.3.1
 Release:        1%{?dist}
 Summary:        Local caching HTTP and HTTPS development proxy
 
@@ -108,6 +108,14 @@ done
 %{_mandir}/man1/lemmingd.1*
 
 %changelog
+* Mon Nov 02 2026 Anatolii Vorona <vorona.tolik@gmail.com> - 0.3.1-1
+- Add lemmingd mcp, an MCP server for coding agents, and a local control API
+- Add lemmingd config show and lemmingd config merge for rules.auto.json
+- Build with Go 1.27.3 to fix GO-2026-6809
+- Close the lemmingd Firefox when lemmingd stops
+- Examine the Firefox profile lock, not only the lock file
+- Add a procedure to test geo-dependent cookie consent
+
 * Sun Oct 18 2026 Anatolii Vorona <vorona.tolik@gmail.com> - 0.2.0-1
 - Update golang.org/x/net to fix HTTP/2 denial-of-service vulnerabilities
 - Restrict remote clients from loopback, link-local, and metadata destinations
