@@ -21,6 +21,8 @@ versioning while the project remains below version 1.0.
 - `lemmingd config show` prints the effective configuration, and
   `lemmingd config merge` moves `rules.auto.json` into `config.json`, keeping
   `config.json.bak`.
+- A lemmingd procedure to test geo-dependent cookie consent (CMP) without a
+  VPN, and an example configuration for it.
 
 ### Changed
 

@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "listen": "127.0.0.1:18080",
+  "allow_remote_clients": false,
+  "allow_remote_targets": false,
+  "rules": [
+    {
+      "target": "127.0.0.1:8000",
+      "domains": [
+        "cmp.example-cmp.com"
+      ],
+      "include_paths": [
+        "/CUSTOMER_ID/CONFIG_ID/cmp.js"
+      ],
+      "exclude_paths": []
+    }
+  ]
+}

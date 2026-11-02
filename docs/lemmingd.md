@@ -186,7 +186,10 @@ with domains you are authorized to test.
 
 For a copy-paste walkthrough that replaces the theme of a real static site
 while leaving its HTML remote, see
-[Replace a static site's theme locally](lemmingd.howto.md).
+[Replace a static site's theme locally](lemmingd.howto.md). To see the cookie
+consent behavior of a different region, see
+[Test geo-dependent cookie consent without a VPN](lemmingd.geo-consent.md).
+This procedure serves a changed copy of a third-party consent script.
 
 ### Dev-server checklist
 

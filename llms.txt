@@ -12,6 +12,7 @@ License: MIT
 - [Terragrunt cache example](https://github.com/BOPOHA/hamsterd/blob/main/docs/hamsterd.howto.md): copy-paste workflow for caching Terraform Registry and HashiCorp release downloads
 - [lemmingd guide](https://github.com/BOPOHA/hamsterd/blob/main/docs/lemmingd.md): route selected domains and paths to local or alternate origins, and launch an isolated configured Firefox profile
 - [lemmingd static-site example](https://github.com/BOPOHA/hamsterd/blob/main/docs/lemmingd.howto.md): replace remote site assets with locally modified content
+- [lemmingd geo-dependent consent example](https://github.com/BOPOHA/hamsterd/blob/main/docs/lemmingd.geo-consent.md): serve a third-party consent (CMP) script for a different ISO 3166-2 region, and record the tags that load before and after consent. A VPN is not necessary.
 - [CA installation](https://github.com/BOPOHA/hamsterd/blob/main/docs/ca-installation.md): trust the generated development CA in browsers and command-line clients
 - [Security policy](https://github.com/BOPOHA/hamsterd/blob/main/SECURITY.md): threat model and vulnerability reporting
 - [Example configurations](https://github.com/BOPOHA/hamsterd/tree/main/examples): ready-to-edit JSON configurations, including an anonymized multi-rule lemmingd setup based on real development use
@@ -46,6 +47,7 @@ License: MIT
 - Reverse a lemmingd rule to exercise a local API implementation through the already-deployed frontend.
 - Use separate browser-visible frontend and API hostnames to test a local API's real CORS behavior, or preserve one hostname to test same-origin cookies, redirects, OAuth callbacks, service workers, and Secure/SameSite behavior.
 - Route selected assets or API calls to a local replacement, mock, or failure simulator while the rest of the application remains remote.
+- Test the cookie consent rules of a different region: send only the CMP script to a local copy with a changed region. Changed `X-Forwarded-For` and similar headers do not change the region that the CMP finds from the IP address.
 
 ## Source layout
 

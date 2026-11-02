@@ -228,7 +228,9 @@ CORS and HTTPS examples, routing semantics, dev-server checklist, and
 troubleshooting are in
 [Using lemmingd](docs/lemmingd.md). See also the
 [multi-rule example configuration](examples/lemmingd.json), adapted and
-anonymized from a real development setup.
+anonymized from a real development setup. To see which tags load before and
+after consent in a different region, see
+[Test geo-dependent cookie consent without a VPN](docs/lemmingd.geo-consent.md).
 
 To launch an isolated Firefox instance that is already configured to use
 lemmingd and trust its CA, install `certutil` (`nss-tools` on Fedora/RHEL or
