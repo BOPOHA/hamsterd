@@ -2,7 +2,7 @@ module github.com/BOPOHA/hamsterd
 
 go 1.26.0
 
-toolchain go1.27.2
+toolchain go1.27.3
 
 require (
 	github.com/elazarl/goproxy v1.9.2

@@ -32,6 +32,8 @@ versioning while the project remains below version 1.0.
 
 ### Security
 
+- Build with Go 1.27.3, fixing a reachable `crypto/x509` vulnerability that
+  trusted compromised intermediate certificates (GO-2026-6809).
 - The control API documents its accepted risks: MCP callers can intercept any
   domain, rule targets relax the remote-client guard, and `recent_requests`
   exposes request paths to agents.
