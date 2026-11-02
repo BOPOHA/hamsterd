@@ -26,11 +26,22 @@ versioning while the project remains below version 1.0.
 
 ### Changed
 
+- `lemmingd firefox` closes its Firefox when lemmingd stops. It asks Firefox
+  to quit, and stops Firefox only if it does not quit in 10 seconds. Firefox
+  runs in its own process group, so `Ctrl+C` in the terminal goes only to
+  lemmingd. The managed profile disables the Firefox quit warning.
 - New lemmingd configuration files no longer contain an empty hamsterd
   `cache` section.
 - lemmingd rule domains must be hostnames or IP addresses without a port;
   ports, wildcards, and spaces are now refused instead of silently never
   matching.
+
+### Fixed
+
+- `lemmingd firefox` refused to start after the first Firefox session with
+  "appears to be in use". Firefox keeps its lock file after it exits, and
+  lemmingd examined only whether the file existed. lemmingd now examines
+  whether a running Firefox holds the lock.
 
 ### Security
 

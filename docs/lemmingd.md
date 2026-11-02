@@ -112,23 +112,31 @@ CA to the macOS Keychain or Windows certificate store, because that would trust
 the CA outside the isolated Firefox profile.
 
 The managed profile retains its own cookies, history, sessions, saved logins,
-and other Firefox data. Treat it as sensitive development data. Closing Firefox
-does not stop lemmingd. Lemmingd does not explicitly close Firefox when it
-stops, though terminal-delivered signals can also reach Firefox; close both when
-finished. A Firefox window left open after lemmingd stops remains configured
-for the now-unavailable proxy. Start normal
-`lemmingd` again and reload that existing window, or close Firefox and stop any
-existing lemmingd process before using `lemmingd firefox URL` again. The
+and other Firefox data. Treat it as sensitive development data.
+
+When `lemmingd` stops, for example after `Ctrl+C`, it closes the Firefox that
+it started. It asks Firefox to quit, as *File > Quit* does, so Firefox saves
+its data. On macOS, the quit request goes to this Firefox process only, not to
+other Firefox windows. On Linux, the request is `SIGTERM`. On Windows, it is a
+normal window close. If Firefox does not quit in 10 seconds, `lemmingd` stops
+it. Press `Ctrl+C` again to stop `lemmingd` immediately without this wait.
+The managed profile disables the Firefox quit warning, so open tabs do not
+stop the quit.
+
+Closing Firefox does not stop `lemmingd`. If `lemmingd` stops in a different
+way, for example after a crash, the Firefox window stays configured for the
+proxy that does not operate. Start normal `lemmingd` again and reload that
+window, or close Firefox before you use `lemmingd firefox URL` again. The
 combined command starts a new proxy; it cannot attach to one already listening.
 
 To remove the profile, first close its Firefox window and lemmingd, then delete
 only the `firefox-profile` directory shown in the startup log. This removes its
 CA trust and all browsing data stored in that managed profile; it does not
 affect the normal Firefox profile. A stale launcher lease left by a crash is
-replaced automatically once Firefox's native profile lock is gone. If Firefox
-itself crashed and left one of its profile-lock files behind, first confirm that
-no Firefox process still uses this profile before removing that lock file and
-retrying. A lemmingd crash during profile preparation can instead leave its
+replaced automatically once Firefox's native profile lock is gone. Firefox keeps
+its lock files (`.parentlock`, `parent.lock`) after it exits. `lemmingd` does
+not examine only the files: it examines whether a running Firefox holds the
+lock. Thus, you do not need to delete these files. A lemmingd crash during profile preparation can instead leave its
 `.lemmingd-firefox.prepare` directory; after confirming that no other lemmingd
 process is preparing this profile, remove that directory and retry.
 

@@ -24,6 +24,16 @@ const preparationLockName = ".lemmingd-firefox.prepare"
 const firefoxProfileLockTimeout = 5 * time.Second
 const firefoxProfileLockPollInterval = 10 * time.Millisecond
 
+// quitTimeout is the time that Close gives Firefox to quit after the quit
+// request. stopTimeout is the time that Close waits after it stops Firefox.
+// Tests make them shorter.
+var quitTimeout = 10 * time.Second
+var stopTimeout = 5 * time.Second
+
+// profileLocked tells if a Firefox process holds the native lock of a
+// profile. Tests replace it, because a process cannot see its own fcntl lock.
+var profileLocked = firefoxProfileLocked
+
 // Config identifies the Firefox profile and proxy that Firefox should use.
 type Config struct {
 	Profile       string
@@ -43,7 +53,9 @@ type commandRunner interface {
 type startedCommand struct {
 	pid    int
 	exited <-chan error
-	kill   func() error
+	// quit asks Firefox to quit normally. kill stops Firefox immediately.
+	quit func() error
+	kill func() error
 }
 
 type systemRunner struct{}
@@ -56,6 +68,9 @@ func (systemRunner) Run(name string, args ...string) ([]byte, error) {
 
 func (systemRunner) Start(name string, args ...string) (startedCommand, error) {
 	command := exec.Command(name, args...)
+	// Firefox runs in its own process group. Thus, Ctrl+C in the terminal
+	// stops only lemmingd, and lemmingd then closes Firefox correctly.
+	command.SysProcAttr = processAttributes()
 	if err := command.Start(); err != nil {
 		return startedCommand{}, err
 	}
@@ -67,45 +82,95 @@ func (systemRunner) Start(name string, args ...string) (startedCommand, error) {
 	return startedCommand{
 		pid:    command.Process.Pid,
 		exited: exited,
+		quit:   func() error { return requestQuit(command.Process) },
 		kill:   command.Process.Kill,
 	}, nil
 }
 
+// Browser is a Firefox instance that Launch started.
+type Browser struct {
+	command startedCommand
+	// released closes after Firefox exits and its launcher lease is removed.
+	released <-chan struct{}
+}
+
 // Launch prepares the dedicated profile, imports the public CA, and starts an
 // isolated Firefox instance. It never modifies Firefox's default profile.
-func Launch(config Config) error {
+func Launch(config Config) (*Browser, error) {
 	return prepareAndLaunch(config, systemRunner{})
 }
 
-func prepareAndLaunch(config Config, runner commandRunner) error {
+// Running tells if Firefox has not exited yet.
+func (browser *Browser) Running() bool {
+	select {
+	case <-browser.released:
+		return false
+	default:
+		return true
+	}
+}
+
+// Close asks Firefox to quit and waits for it. If Firefox does not quit in
+// time, Close stops it. The return value forced is true when Close stopped
+// Firefox. If Firefox exited before, Close does nothing.
+func (browser *Browser) Close() (forced bool, err error) {
+	if !browser.Running() {
+		return false, nil
+	}
+	quitErr := browser.command.quit()
+	if quitErr == nil {
+		timer := time.NewTimer(quitTimeout)
+		defer timer.Stop()
+		select {
+		case <-browser.released:
+			return false, nil
+		case <-timer.C:
+		}
+	} else {
+		quitErr = fmt.Errorf("ask Firefox to quit: %w", quitErr)
+	}
+	if err := browser.command.kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		return true, errors.Join(quitErr, fmt.Errorf("stop Firefox: %w", err))
+	}
+	timer := time.NewTimer(stopTimeout)
+	defer timer.Stop()
+	select {
+	case <-browser.released:
+		return true, quitErr
+	case <-timer.C:
+		return true, errors.Join(quitErr, errors.New("Firefox did not stop"))
+	}
+}
+
+func prepareAndLaunch(config Config, runner commandRunner) (*Browser, error) {
 	if err := validate(config); err != nil {
-		return err
+		return nil, err
 	}
 	certutil, err := findCertutil(config.NSSCertutil, runner)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	firefox, err := findFirefox(config.Binary, runner)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := os.MkdirAll(config.Profile, 0o700); err != nil {
-		return fmt.Errorf("create Firefox profile: %w", err)
+		return nil, fmt.Errorf("create Firefox profile: %w", err)
 	}
 	if err := os.Chmod(config.Profile, 0o700); err != nil {
-		return fmt.Errorf("protect Firefox profile: %w", err)
+		return nil, fmt.Errorf("protect Firefox profile: %w", err)
 	}
 	preparation, err := acquirePreparationLock(config.Profile)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer func() { _ = preparation.remove() }()
 	if err := checkFirefoxProfileLock(config.Profile); err != nil {
-		return err
+		return nil, err
 	}
 	lease, err := acquireProfileLease(config.Profile)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	keepLease := false
 	defer func() {
@@ -114,43 +179,45 @@ func prepareAndLaunch(config Config, runner commandRunner) error {
 		}
 	}()
 	if err := writePreferences(config.Profile, config.ProxyAddress); err != nil {
-		return err
+		return nil, err
 	}
 
 	database := "sql:" + config.Profile
 	if _, err := os.Stat(filepath.Join(config.Profile, "cert9.db")); errors.Is(err, os.ErrNotExist) {
 		if output, err := runner.Run(certutil, "-N", "-d", database, "--empty-password"); err != nil {
-			return commandError("initialize Firefox certificate database", err, output)
+			return nil, commandError("initialize Firefox certificate database", err, output)
 		}
 	} else if err != nil {
-		return fmt.Errorf("inspect Firefox certificate database: %w", err)
+		return nil, fmt.Errorf("inspect Firefox certificate database: %w", err)
 	}
 	// A CA may have been regenerated since the previous launch. Removing the
 	// old nickname is harmless when it is absent and prevents stale trust.
 	_, _ = runner.Run(certutil, "-D", "-d", database, "-n", certificateNickname)
 	if output, err := runner.Run(certutil, "-A", "-d", database, "-n", certificateNickname,
 		"-t", "C,,", "-i", config.CACertificate); err != nil {
-		return commandError("trust lemmingd CA in Firefox profile", err, output)
+		return nil, commandError("trust lemmingd CA in Firefox profile", err, output)
 	}
 	command, err := runner.Start(firefox, "-no-remote", "-profile", config.Profile, config.URL)
 	if err != nil {
-		return fmt.Errorf("start Firefox: %w", err)
+		return nil, fmt.Errorf("start Firefox: %w", err)
 	}
 	// Keep the preparation lock until Firefox has created its own native
 	// profile lock. This prevents a second launcher from treating our lease as
 	// stale and changing the profile while Firefox is still starting.
 	if err := waitForFirefoxProfileLock(config.Profile, command.exited); err != nil {
-		return errors.Join(err, stopCommand(command))
+		return nil, errors.Join(err, stopCommand(command))
 	}
 	if err := lease.update(command.pid); err != nil {
-		return errors.Join(fmt.Errorf("record Firefox process: %w", err), stopCommand(command))
+		return nil, errors.Join(fmt.Errorf("record Firefox process: %w", err), stopCommand(command))
 	}
 	keepLease = true
+	released := make(chan struct{})
 	go func() {
 		<-command.exited //nolint:errcheck // only startup exit status is reported
 		removeExitedLease(config.Profile, lease)
+		close(released)
 	}()
-	return nil
+	return &Browser{command: command, released: released}, nil
 }
 
 func stopCommand(command startedCommand) error {
@@ -176,7 +243,7 @@ func waitForFirefoxProfileLock(profile string, exited <-chan error) error {
 			return errors.New("Firefox exited during startup")
 		default:
 		}
-		locked, err := firefoxProfileLocked(profile)
+		locked, err := profileLocked(profile)
 		if err != nil {
 			return err
 		}
@@ -367,9 +434,10 @@ func parseLease(data []byte) (string, int, string, error) {
 
 // checkFirefoxProfileLock catches a profile opened outside lemmingd. Firefox
 // creates these locks itself; unlike the launcher lease, they also cover a
-// browser started manually with -profile.
+// browser started manually with -profile. The lock files stay after Firefox
+// exits, so profileLocked examines the lock itself, not only the file.
 func checkFirefoxProfileLock(profile string) error {
-	locked, err := firefoxProfileLocked(profile)
+	locked, err := profileLocked(profile)
 	if err != nil {
 		return err
 	}
@@ -377,19 +445,6 @@ func checkFirefoxProfileLock(profile string) error {
 		return fmt.Errorf("Firefox profile %q appears to be in use; close Firefox first", profile)
 	}
 	return nil
-}
-
-func firefoxProfileLocked(profile string) (bool, error) {
-	for _, name := range []string{"lock", ".parentlock", "parent.lock"} {
-		_, err := os.Lstat(filepath.Join(profile, name))
-		if err == nil {
-			return true, nil
-		}
-		if !errors.Is(err, os.ErrNotExist) {
-			return false, fmt.Errorf("inspect Firefox profile lock %q (%s): %w", profile, name, err)
-		}
-	}
-	return false, nil
 }
 
 func (lease *profileLease) update(pid int) error {
@@ -457,6 +512,8 @@ user_pref("network.proxy.http_port", %d);
 user_pref("network.proxy.ssl", %s);
 user_pref("network.proxy.ssl_port", %d);
 user_pref("network.proxy.no_proxies_on", "localhost, 127.0.0.1, ::1");
+// lemmingd closes Firefox when it stops. A quit warning would stop that.
+user_pref("browser.warnOnQuit", false);
 `, strconv.Quote(host), port, strconv.Quote(host), port)
 	if err := os.WriteFile(filepath.Join(profile, "user.js"), []byte(prefs), 0o600); err != nil {
 		return fmt.Errorf("write Firefox proxy preferences: %w", err)

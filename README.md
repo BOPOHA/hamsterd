@@ -242,6 +242,7 @@ lemmingd and trust its CA, install `certutil` (`nss-tools` on Fedora/RHEL or
 
 It creates or reuses a lemmingd-owned Firefox profile beside the lemmingd
 configuration. Your usual Firefox profile remains direct and unchanged.
+When lemmingd stops, it asks this Firefox to quit.
 On Windows, pass `-nss-certutil PATH` for the NSS `certutil` executable; the
 built-in Windows `certutil.exe` cannot configure Firefox trust.
 

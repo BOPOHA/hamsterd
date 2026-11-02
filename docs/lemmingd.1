@@ -40,12 +40,13 @@ tools package is required. On Windows, pass the NSS executable with
 .B \-nss-certutil
 because the built-in Windows certutil program is incompatible.
 .PP
-Closing Firefox does not stop lemmingd. Lemmingd does not explicitly close
-Firefox when it stops, though terminal-delivered signals can also reach
-Firefox. The managed profile retains browser data and remains configured for
-the proxy between launches. Lemmingd refuses to modify the profile while
-Firefox holds its profile lock. To use the combined command again, close
-Firefox and stop any existing lemmingd process first.
+When lemmingd stops, it asks the Firefox that it started to quit. If Firefox
+does not quit in 10 seconds, lemmingd stops it. A second interrupt stops
+lemmingd immediately. Closing Firefox does not stop lemmingd. The managed
+profile retains browser data and remains configured for the proxy between
+launches. Lemmingd refuses to modify the profile while a running Firefox holds
+its profile lock. A lock file that Firefox kept after it exited does not
+prevent a launch.
 .PP
 The
 .B mcp

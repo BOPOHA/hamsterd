@@ -100,9 +100,9 @@ func TestRunFirefoxLaunchFailureStopsServer(t *testing.T) {
 	oldLaunch := launchFirefox
 	t.Cleanup(func() { launchFirefox = oldLaunch })
 	var received firefox.Config
-	launchFirefox = func(config firefox.Config) error {
+	launchFirefox = func(config firefox.Config) (*firefox.Browser, error) {
 		received = config
-		return want
+		return nil, want
 	}
 	var stderr bytes.Buffer
 	code := run([]string{"firefox", "-listen", address, "https://example.test/"}, &bytes.Buffer{}, &stderr)

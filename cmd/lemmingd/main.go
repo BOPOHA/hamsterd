@@ -169,29 +169,57 @@ func run(args []string, stdout, stderr io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	var onReady func() error
+	var browser *firefox.Browser
 	if firefoxMode {
 		profile := filepath.Join(filepath.Dir(*configPath), "firefox-profile")
 		browserURL := flags.Arg(0)
 		onReady = func() error {
-			if err := launchFirefox(firefox.Config{
+			started, err := launchFirefox(firefox.Config{
 				Profile:       profile,
 				CACertificate: *caCertPath,
 				ProxyAddress:  cfg.Listen,
 				URL:           browserURL,
 				Binary:        *firefoxBinary,
 				NSSCertutil:   *nssCertutil,
-			}); err != nil {
+			})
+			if err != nil {
 				return fmt.Errorf("prepare Firefox: %w", err)
 			}
+			browser = started
 			logger.Printf("started Firefox with isolated lemmingd profile %s", profile)
 			return nil
 		}
 	}
-	if err := proxycore.ServeAfterListen(ctx, cfg.Listen, proxy, logger, options, onReady); err != nil {
-		logger.Printf("server error: %v", err)
+	serveErr := proxycore.ServeAfterListen(ctx, cfg.Listen, proxy, logger, options, onReady)
+	if browser != nil {
+		// Restore the default signal behavior: a second Ctrl+C stops lemmingd
+		// immediately and does not wait for Firefox.
+		stop()
+		closeFirefox(browser, logger)
+	}
+	if serveErr != nil {
+		logger.Printf("server error: %v", serveErr)
 		return 1
 	}
 	return 0
+}
+
+// closeFirefox closes the Firefox that lemmingd started. Without this, Firefox
+// stays open with a proxy that does not operate.
+func closeFirefox(browser *firefox.Browser, logger *log.Logger) {
+	if !browser.Running() {
+		return
+	}
+	logger.Printf("closing Firefox")
+	forced, err := browser.Close()
+	switch {
+	case err != nil:
+		logger.Printf("warning: close Firefox: %v", err)
+	case forced:
+		logger.Printf("warning: Firefox did not quit in time; lemmingd stopped it")
+	default:
+		logger.Printf("closed Firefox")
+	}
 }
 
 // recordingRoundTripper sends a request and records its outcome, including

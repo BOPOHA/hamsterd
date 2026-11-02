@@ -10,6 +10,19 @@ import (
 	"time"
 )
 
+// The fake Firefox cannot hold a real lock: a process does not see its own
+// fcntl lock. These tests use an empty parent.lock file as the lock. The real
+// lock test is in lock_unix_test.go.
+func init() {
+	profileLocked = func(profile string) (bool, error) {
+		_, err := os.Stat(filepath.Join(profile, "parent.lock"))
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return err == nil, err
+	}
+}
+
 type recordedCommand struct {
 	name string
 	args []string
@@ -25,6 +38,8 @@ type fakeRunner struct {
 	startError error
 	startExit  chan error
 	killed     bool
+	quits      int
+	exitOnQuit bool
 	createLock bool
 	onStart    func([]string)
 }
@@ -68,6 +83,13 @@ func (runner *fakeRunner) Start(name string, args ...string) (startedCommand, er
 	return startedCommand{
 		pid:    runner.startPID,
 		exited: runner.startExit,
+		quit: func() error {
+			runner.quits++
+			if runner.exitOnQuit {
+				runner.startExit <- nil
+			}
+			return nil
+		},
 		kill: func() error {
 			runner.killed = true
 			select {
@@ -91,7 +113,7 @@ func TestPrepareAndLaunchCreatesIsolatedProfile(t *testing.T) {
 		Profile: profile, CACertificate: caPath, ProxyAddress: "127.0.0.1:18080",
 		URL: "https://www.foo-bar-example.test/",
 	}
-	if err := prepareAndLaunch(config, runner); err != nil {
+	if _, err := prepareAndLaunch(config, runner); err != nil {
 		t.Fatal(err)
 	}
 	prefs, err := os.ReadFile(filepath.Join(profile, "user.js"))
@@ -145,7 +167,7 @@ func TestPrepareAndLaunchRejectsConcurrentPreparation(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner := newRunningRunner()
-	err := prepareAndLaunch(Config{
+	_, err := prepareAndLaunch(Config{
 		Profile: profile, CACertificate: caPath, ProxyAddress: "127.0.0.1:18080", URL: "https://example.test/",
 	}, runner)
 	if err == nil || !strings.Contains(err.Error(), "being prepared") {
@@ -250,7 +272,7 @@ func TestPrepareAndLaunchRequiresCertutil(t *testing.T) {
 	if err := os.WriteFile(caPath, []byte("certificate"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	err := prepareAndLaunch(Config{
+	_, err := prepareAndLaunch(Config{
 		Profile: filepath.Join(dir, "firefox-profile"), CACertificate: caPath,
 		ProxyAddress: "127.0.0.1:18080", URL: "https://example.test/",
 	}, &fakeRunner{paths: map[string]string{"firefox": "/bin/firefox"}})
@@ -273,7 +295,7 @@ func TestPrepareAndLaunchReusesCertificateDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner := newRunningRunner()
-	if err := prepareAndLaunch(Config{
+	if _, err := prepareAndLaunch(Config{
 		Profile: profile, CACertificate: caPath, ProxyAddress: "127.0.0.1:18080", URL: "https://example.test/",
 	}, runner); err != nil {
 		t.Fatal(err)
@@ -292,7 +314,7 @@ func TestPrepareAndLaunchRejectsFirefoxThatExitsDuringStartup(t *testing.T) {
 	}
 	runner := newRunningRunner()
 	runner.startExit <- errors.New("exit status 1")
-	err := prepareAndLaunch(Config{
+	_, err := prepareAndLaunch(Config{
 		Profile: filepath.Join(dir, "firefox-profile"), CACertificate: caPath,
 		ProxyAddress: "127.0.0.1:18080", URL: "https://example.test/",
 	}, runner)
@@ -314,9 +336,10 @@ func TestPrepareAndLaunchWaitsForNativeFirefoxLock(t *testing.T) {
 	runner.onStart = func([]string) { close(started) }
 	result := make(chan error, 1)
 	go func() {
-		result <- prepareAndLaunch(Config{
+		_, err := prepareAndLaunch(Config{
 			Profile: profile, CACertificate: caPath, ProxyAddress: "127.0.0.1:18080", URL: "https://example.test/",
 		}, runner)
+		result <- err
 	}()
 	<-started
 	select {
@@ -347,7 +370,7 @@ func TestPrepareAndLaunchRejectsNativeFirefoxLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner := newRunningRunner()
-	err := prepareAndLaunch(Config{
+	_, err := prepareAndLaunch(Config{
 		Profile: profile, CACertificate: caPath, ProxyAddress: "127.0.0.1:18080", URL: "https://example.test/",
 	}, runner)
 	if err == nil || !strings.Contains(err.Error(), "appears to be in use") {
@@ -369,7 +392,7 @@ func TestPrepareAndLaunchRemovesLeaseWhenFirefoxExits(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner := newRunningRunner()
-	if err := prepareAndLaunch(Config{
+	if _, err := prepareAndLaunch(Config{
 		Profile: profile, CACertificate: caPath, ProxyAddress: "127.0.0.1:18080", URL: "https://example.test/",
 	}, runner); err != nil {
 		t.Fatal(err)
@@ -385,7 +408,7 @@ func TestPrepareAndLaunchRemovesPreparationLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner := newRunningRunner()
-	if err := prepareAndLaunch(Config{
+	if _, err := prepareAndLaunch(Config{
 		Profile: profile, CACertificate: caPath, ProxyAddress: "127.0.0.1:18080", URL: "https://example.test/",
 	}, runner); err != nil {
 		t.Fatal(err)
@@ -413,7 +436,7 @@ func TestPrepareAndLaunchStopsFirefoxWhenPostStartSetupFails(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	err := prepareAndLaunch(Config{
+	_, err := prepareAndLaunch(Config{
 		Profile: profile, CACertificate: caPath, ProxyAddress: "127.0.0.1:18080", URL: "https://example.test/",
 	}, runner)
 	if err == nil || !strings.Contains(err.Error(), "record Firefox process") {
@@ -470,7 +493,7 @@ func TestPrepareAndLaunchReportsCertutilOutputAndReleasesLease(t *testing.T) {
 		paths:    map[string]string{"certutil": "/bin/certutil", "firefox": "/bin/firefox"},
 		runError: errors.New("exit status 1"), runOutput: []byte("database is read-only\n"),
 	}
-	err := prepareAndLaunch(Config{
+	_, err := prepareAndLaunch(Config{
 		Profile: profile, CACertificate: caPath, ProxyAddress: "127.0.0.1:18080", URL: "https://example.test/",
 	}, runner)
 	if err == nil || !strings.Contains(err.Error(), "database is read-only") {
@@ -542,5 +565,88 @@ func TestFirefoxCandidates(t *testing.T) {
 	windows := firefoxCandidates("windows", getenv, home)
 	if len(windows) != 3 || !strings.HasSuffix(windows[0], filepath.Join("Mozilla Firefox", "firefox.exe")) {
 		t.Fatalf("Windows candidates = %#v", windows)
+	}
+}
+
+func launchFakeBrowser(t *testing.T, runner *fakeRunner) (*Browser, string) {
+	t.Helper()
+	dir := t.TempDir()
+	caPath := filepath.Join(dir, "ca.crt")
+	if err := os.WriteFile(caPath, []byte("certificate"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	profile := filepath.Join(dir, "firefox-profile")
+	browser, err := prepareAndLaunch(Config{
+		Profile: profile, CACertificate: caPath, ProxyAddress: "127.0.0.1:18080", URL: "https://example.test/",
+	}, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return browser, profile
+}
+
+func TestBrowserCloseAsksFirefoxToQuit(t *testing.T) {
+	runner := newRunningRunner()
+	runner.exitOnQuit = true
+	browser, profile := launchFakeBrowser(t, runner)
+	forced, err := browser.Close()
+	if err != nil || forced {
+		t.Fatalf("Close = %v, %v; want a normal quit", forced, err)
+	}
+	if runner.quits != 1 || runner.killed {
+		t.Fatalf("quits = %d, killed = %v", runner.quits, runner.killed)
+	}
+	if browser.Running() {
+		t.Fatal("browser is running after Close")
+	}
+	if _, err := os.Stat(filepath.Join(profile, launcherLockName)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("lease was not removed before Close returned: %v", err)
+	}
+}
+
+func TestBrowserCloseStopsFirefoxThatDoesNotQuit(t *testing.T) {
+	oldQuit := quitTimeout
+	t.Cleanup(func() { quitTimeout = oldQuit })
+	quitTimeout = 10 * time.Millisecond
+	runner := newRunningRunner()
+	browser, _ := launchFakeBrowser(t, runner)
+	forced, err := browser.Close()
+	if err != nil || !forced {
+		t.Fatalf("Close = %v, %v; want a forced stop", forced, err)
+	}
+	if runner.quits != 1 || !runner.killed {
+		t.Fatalf("quits = %d, killed = %v", runner.quits, runner.killed)
+	}
+}
+
+func TestBrowserCloseDoesNothingAfterFirefoxExited(t *testing.T) {
+	runner := newRunningRunner()
+	browser, profile := launchFakeBrowser(t, runner)
+	stopFakeFirefox(t, runner, profile)
+	for deadline := time.Now().Add(time.Second); browser.Running(); {
+		if time.Now().After(deadline) {
+			t.Fatal("browser did not report its exit")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if forced, err := browser.Close(); err != nil || forced {
+		t.Fatalf("Close = %v, %v", forced, err)
+	}
+	if runner.quits != 0 || runner.killed {
+		t.Fatalf("quits = %d, killed = %v", runner.quits, runner.killed)
+	}
+}
+
+func TestWritePreferencesDisablesQuitWarning(t *testing.T) {
+	profile := t.TempDir()
+	if err := writePreferences(profile, "127.0.0.1:18080"); err != nil {
+		t.Fatal(err)
+	}
+	prefs, err := os.ReadFile(filepath.Join(profile, "user.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(prefs), `user_pref("browser.warnOnQuit", false);`) {
+		t.Fatalf("preferences do not disable the quit warning:\n%s", prefs)
 	}
 }
