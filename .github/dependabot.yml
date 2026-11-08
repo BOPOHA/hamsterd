@@ -3,7 +3,7 @@ updates:
   - package-ecosystem: gomod
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     groups:
       go-modules:
         patterns: ["*"]
@@ -11,7 +11,7 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     groups:
       github-actions:
         patterns: ["*"]
@@ -19,4 +19,4 @@ updates:
   - package-ecosystem: docker
     directory: /packaging/container
     schedule:
-      interval: weekly
+      interval: monthly
